@@ -1,0 +1,6 @@
+{
+  "name": "JIT 3D Cartoon Studio",
+  "description": "Interactive 3D cartoon animation studio and multi-scene video maker with procedural 3D characters, AI 3D model builder, AI story writer, voiceover lip-sync, and video export.",
+  "requestFramePermissions": ["microphone"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

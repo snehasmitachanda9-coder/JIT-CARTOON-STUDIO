@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" rx="112" fill="#0B0E14"/>
+  <rect x="36" y="36" width="440" height="440" rx="88" fill="#131926" stroke="#F59E0B" stroke-opacity="0.35" stroke-width="8"/>
+  <!-- 3D Cube / Clapper Emblem -->
+  <path d="M256 118 L376 186 L376 326 L256 394 L136 326 L136 186 Z" fill="#1E293B" stroke="#F59E0B" stroke-width="14" stroke-linejoin="round"/>
+  <path d="M256 118 L256 256 L376 186" fill="none" stroke="#F59E0B" stroke-width="12" stroke-linejoin="round"/>
+  <path d="M256 256 L136 186" fill="none" stroke="#F59E0B" stroke-width="12" stroke-linejoin="round"/>
+  <path d="M256 256 L256 394" fill="none" stroke="#38BDF8" stroke-width="12" stroke-linecap="round"/>
+  <!-- Play Triangle -->
+  <polygon points="232,208 296,246 232,284" fill="#F59E0B"/>
+</svg>
