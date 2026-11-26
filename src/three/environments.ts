@@ -69,34 +69,81 @@ function createCloudCluster(scale = 1): THREE.Group {
 function createCartoonTree(scale = 1, hueShift = 0): THREE.Group {
   const tree = new THREE.Group();
 
-  const trunkMat = new THREE.MeshPhysicalMaterial({ color: 0x7c4a2d, roughness: 0.85, metalness: 0.02 });
-  const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.16 * scale, 0.26 * scale, 1.35 * scale, 20), trunkMat);
-  trunk.position.y = 0.675 * scale;
+  const trunkMat = new THREE.MeshPhysicalMaterial({
+    color: 0x7c4a2d,
+    roughness: 0.86,
+    metalness: 0.02,
+    clearcoat: 0.06,
+  });
+  const trunkPts = [
+    new THREE.Vector2(0.38 * scale, 0.0),
+    new THREE.Vector2(0.28 * scale, 0.18 * scale),
+    new THREE.Vector2(0.21 * scale, 0.48 * scale),
+    new THREE.Vector2(0.18 * scale, 0.96 * scale),
+    new THREE.Vector2(0.14 * scale, 1.42 * scale),
+  ];
+  const trunk = new THREE.Mesh(new THREE.LatheGeometry(trunkPts, 20), trunkMat);
   trunk.castShadow = true;
   trunk.receiveShadow = true;
-  trunk.add(createCartoonOutline(trunk, 1.025, 0x2a1810));
+  trunk.add(createCartoonOutline(trunk, 1.024, 0x2a1810));
   tree.add(trunk);
+
+  // Curved organic side branches
+  const branchL = new THREE.Mesh(
+    new THREE.TubeGeometry(
+      new THREE.CatmullRomCurve3([
+        new THREE.Vector3(-0.08 * scale, 0.94 * scale, 0.02 * scale),
+        new THREE.Vector3(-0.28 * scale, 1.2 * scale, 0.1 * scale),
+        new THREE.Vector3(-0.48 * scale, 1.42 * scale, 0.18 * scale),
+      ]),
+      10,
+      0.075 * scale,
+      10,
+      false
+    ),
+    trunkMat
+  );
+  const branchR = new THREE.Mesh(
+    new THREE.TubeGeometry(
+      new THREE.CatmullRomCurve3([
+        new THREE.Vector3(0.08 * scale, 0.98 * scale, -0.02 * scale),
+        new THREE.Vector3(0.28 * scale, 1.24 * scale, -0.1 * scale),
+        new THREE.Vector3(0.46 * scale, 1.44 * scale, -0.16 * scale),
+      ]),
+      10,
+      0.072 * scale,
+      10,
+      false
+    ),
+    trunkMat
+  );
+  branchL.castShadow = true;
+  branchR.castShadow = true;
+  tree.add(branchL, branchR);
 
   const leafColor = new THREE.Color(0x3cb84b).offsetHSL(hueShift, 0, 0);
   const leafColor2 = new THREE.Color(0x58cc54).offsetHSL(hueShift, 0, 0);
-  const leafMat1 = new THREE.MeshPhysicalMaterial({ color: leafColor, roughness: 0.7, clearcoat: 0.16 });
-  const leafMat2 = new THREE.MeshPhysicalMaterial({ color: leafColor2, roughness: 0.65, clearcoat: 0.2 });
+  const leafDeep = new THREE.Color(0x2a9439).offsetHSL(hueShift, 0, 0);
+  const leafMat1 = new THREE.MeshPhysicalMaterial({ color: leafColor, roughness: 0.68, clearcoat: 0.16 });
+  const leafMat2 = new THREE.MeshPhysicalMaterial({ color: leafColor2, roughness: 0.64, clearcoat: 0.2 });
+  const leafMat3 = new THREE.MeshPhysicalMaterial({ color: leafDeep, roughness: 0.74, clearcoat: 0.12 });
 
-  const puff1 = new THREE.Mesh(new THREE.SphereGeometry(0.86 * scale, 32, 24), leafMat1);
-  puff1.position.set(0, 1.65 * scale, 0);
-  const puff2 = new THREE.Mesh(new THREE.SphereGeometry(0.66 * scale, 28, 20), leafMat2);
-  puff2.position.set(-0.46 * scale, 1.45 * scale, 0.26 * scale);
-  const puff3 = new THREE.Mesh(new THREE.SphereGeometry(0.64 * scale, 28, 20), leafMat2);
-  puff3.position.set(0.44 * scale, 1.5 * scale, -0.22 * scale);
-  const puff4 = new THREE.Mesh(new THREE.SphereGeometry(0.58 * scale, 28, 20), leafMat1);
-  puff4.position.set(0, 2.22 * scale, 0.1 * scale);
-  const puff5 = new THREE.Mesh(new THREE.SphereGeometry(0.54 * scale, 24, 18), leafMat2);
-  puff5.position.set(-0.15 * scale, 1.85 * scale, -0.4 * scale);
+  const puffDefs: Array<[number, number, number, number, THREE.MeshPhysicalMaterial]> = [
+    [0, 1.72, 0, 0.88, leafMat1],
+    [-0.48, 1.48, 0.26, 0.66, leafMat2],
+    [0.46, 1.52, -0.22, 0.64, leafMat2],
+    [0.04, 2.26, 0.1, 0.6, leafMat2],
+    [-0.18, 1.84, -0.4, 0.56, leafMat3],
+    [0.24, 1.46, 0.36, 0.52, leafMat1],
+  ];
 
-  [puff1, puff2, puff3, puff4, puff5].forEach((p) => {
+  puffDefs.forEach(([px, py, pz, r, mat]) => {
+    const p = new THREE.Mesh(new THREE.SphereGeometry(r * scale, 28, 20), mat);
+    p.scale.set(1.06, 0.92, 1.04);
+    p.position.set(px * scale, py * scale, pz * scale);
     p.castShadow = true;
     p.receiveShadow = true;
-    p.add(createCartoonOutline(p, 1.024, 0x1b3a1a));
+    p.add(createCartoonOutline(p, 1.022, 0x1b3a1a));
     tree.add(p);
   });
 
@@ -136,8 +183,12 @@ function createCottage(roofColor: number, wallColor: number, maxAnisotropy = 4):
 
   const baseMat = new THREE.MeshPhysicalMaterial({ map: cobbleTex, color: 0xcbd5e1, roughness: 0.85 });
   const wallMat = new THREE.MeshPhysicalMaterial({ map: brickTex, color: wallColor, roughness: 0.78 });
-  const roofMat = new THREE.MeshPhysicalMaterial({ map: roofTex, color: roofColor, roughness: 0.56, clearcoat: 0.2 });
+  const roofMat = new THREE.MeshPhysicalMaterial({ map: roofTex, color: roofColor, roughness: 0.52, clearcoat: 0.22 });
   const woodMat = new THREE.MeshPhysicalMaterial({ map: woodTex, color: 0x9a5b2c, roughness: 0.72 });
+  const shutterMat = new THREE.MeshPhysicalMaterial({
+    color: new THREE.Color(roofColor).multiplyScalar(0.85),
+    roughness: 0.62,
+  });
   const glassMat = new THREE.MeshPhysicalMaterial({
     color: 0xfef08a,
     emissive: 0xfde047,
@@ -146,40 +197,78 @@ function createCottage(roofColor: number, wallColor: number, maxAnisotropy = 4):
     clearcoat: 0.85,
   });
 
-  const plinth = new THREE.Mesh(new THREE.BoxGeometry(3.2, 0.28, 2.6), baseMat);
+  const plinth = new THREE.Mesh(new THREE.BoxGeometry(3.24, 0.28, 2.64), baseMat);
   plinth.position.y = 0.14;
   const walls = new THREE.Mesh(new THREE.BoxGeometry(3.0, 2.0, 2.4), wallMat);
   walls.position.y = 1.28;
   walls.add(createCartoonOutline(walls, 1.018, 0x2a1810));
-  const roof = new THREE.Mesh(new THREE.ConeGeometry(2.55, 1.45, 4), roofMat);
-  roof.rotation.y = Math.PI / 4;
-  roof.scale.set(1.15, 1, 0.95);
-  roof.position.y = 2.98;
-  roof.add(createCartoonOutline(roof, 1.022, 0x2a1810));
-  const chimney = new THREE.Mesh(new THREE.BoxGeometry(0.38, 1.0, 0.38), baseMat);
-  chimney.position.set(0.85, 3.15, -0.45);
-  const door = new THREE.Mesh(new THREE.BoxGeometry(0.62, 1.15, 0.12), woodMat);
-  door.position.set(0, 0.85, 1.22);
+
+  // Swooped curved shingled gable roof with flared eaves
+  const roofShape = new THREE.Shape();
+  roofShape.moveTo(-1.82, -0.08);
+  roofShape.quadraticCurveTo(-0.98, 0.56, 0, 1.38);
+  roofShape.quadraticCurveTo(0.98, 0.56, 1.82, -0.08);
+  roofShape.lineTo(1.68, -0.24);
+  roofShape.quadraticCurveTo(0.88, 0.36, 0, 1.16);
+  roofShape.quadraticCurveTo(-0.88, 0.36, -1.68, -0.24);
+  roofShape.closePath();
+
+  const roofGeo = new THREE.ExtrudeGeometry(roofShape, {
+    depth: 2.74,
+    bevelEnabled: true,
+    bevelSegments: 2,
+    steps: 1,
+    bevelSize: 0.04,
+    bevelThickness: 0.04,
+  });
+  roofGeo.translate(0, 0, -1.37);
+  const roof = new THREE.Mesh(roofGeo, roofMat);
+  roof.position.y = 2.28;
+  roof.add(createCartoonOutline(roof, 1.02, 0x2a1810));
+
+  // Warm timber gable beam under peak
+  const gableBeam = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.52, 0.12), woodMat);
+  gableBeam.position.set(0, 2.95, 1.24);
+
+  const chimney = new THREE.Mesh(new THREE.BoxGeometry(0.4, 1.05, 0.4), baseMat);
+  chimney.position.set(0.9, 3.12, -0.5);
+  const chimneyCap = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.1, 0.5), roofMat);
+  chimneyCap.position.set(0.9, 3.66, -0.5);
+
+  // Arched wood doorway + frame + brass knob + stone steps
+  const doorFrame = new THREE.Mesh(new THREE.BoxGeometry(0.78, 1.16, 0.14), woodMat);
+  doorFrame.position.set(0, 0.86, 1.21);
+  const doorArch = new THREE.Mesh(new THREE.CylinderGeometry(0.39, 0.39, 0.14, 18), woodMat);
+  doorArch.rotation.x = Math.PI / 2;
+  doorArch.position.set(0, 1.42, 1.21);
+  const door = new THREE.Mesh(new THREE.BoxGeometry(0.62, 1.1, 0.16), woodMat);
+  door.position.set(0, 0.85, 1.23);
   const knob = new THREE.Mesh(
-    new THREE.SphereGeometry(0.04, 16, 12),
+    new THREE.SphereGeometry(0.042, 16, 12),
     new THREE.MeshPhysicalMaterial({ color: 0xfacc15, metalness: 0.85, roughness: 0.18 })
   );
-  knob.position.set(0.18, 0.84, 1.29);
-  const step = new THREE.Mesh(new THREE.BoxGeometry(0.85, 0.12, 0.35), baseMat);
-  step.position.set(0, 0.06, 1.38);
+  knob.position.set(0.18, 0.84, 1.32);
+  const step = new THREE.Mesh(new THREE.BoxGeometry(0.96, 0.12, 0.38), baseMat);
+  step.position.set(0, 0.06, 1.4);
 
-  house.add(plinth, walls, roof, chimney, door, knob, step);
+  house.add(plinth, walls, roof, gableBeam, chimney, chimneyCap, doorFrame, doorArch, door, knob, step);
 
-  [-0.92, 0.92].forEach((wx) => {
-    const frame = new THREE.Mesh(new THREE.BoxGeometry(0.58, 0.58, 0.1), woodMat);
+  [-0.94, 0.94].forEach((wx) => {
+    const frame = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.6, 0.11), woodMat);
     frame.position.set(wx, 1.42, 1.21);
-    const pane = new THREE.Mesh(new THREE.BoxGeometry(0.44, 0.44, 0.12), glassMat);
+    const pane = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.46, 0.13), glassMat);
     pane.position.set(wx, 1.42, 1.22);
-    const mullionV = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.44, 0.14), woodMat);
+    const mullionV = new THREE.Mesh(new THREE.BoxGeometry(0.045, 0.46, 0.15), woodMat);
     mullionV.position.set(wx, 1.42, 1.225);
-    const mullionH = new THREE.Mesh(new THREE.BoxGeometry(0.44, 0.04, 0.14), woodMat);
+    const mullionH = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.045, 0.15), woodMat);
     mullionH.position.set(wx, 1.42, 1.225);
-    house.add(frame, pane, mullionV, mullionH);
+    const sill = new THREE.Mesh(new THREE.BoxGeometry(0.72, 0.08, 0.18), baseMat);
+    sill.position.set(wx, 1.1, 1.24);
+    const shutterL = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.56, 0.06), shutterMat);
+    shutterL.position.set(wx - 0.36, 1.42, 1.22);
+    const shutterR = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.56, 0.06), shutterMat);
+    shutterR.position.set(wx + 0.36, 1.42, 1.22);
+    house.add(frame, pane, mullionV, mullionH, sill, shutterL, shutterR);
   });
 
   house.traverse((obj) => {

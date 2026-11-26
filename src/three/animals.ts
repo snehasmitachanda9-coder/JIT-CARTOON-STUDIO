@@ -138,9 +138,93 @@ function addOutline(mesh: THREE.Mesh, thickness = 1.022, colorHex = 0x2a1810): v
   mesh.add(createCartoonOutline(mesh, thickness, colorHex));
 }
 
-function makeCuteAnimalEye(irisHex: string, radius: number): THREE.Group {
+function makeTaperedAnimalLimb(
+  topR: number,
+  midR: number,
+  botR: number,
+  length: number,
+  radialSegments = 16
+): THREE.BufferGeometry {
+  const pts: THREE.Vector2[] = [
+    new THREE.Vector2(0, -length - botR * 0.4),
+    new THREE.Vector2(botR * 0.72, -length - botR * 0.25),
+    new THREE.Vector2(botR, -length),
+    new THREE.Vector2(midR, -length * 0.5),
+    new THREE.Vector2(topR, -length * 0.14),
+    new THREE.Vector2(topR * 0.85, topR * 0.26),
+    new THREE.Vector2(0, topR * 0.46),
+  ];
+  const geo = new THREE.LatheGeometry(pts, radialSegments);
+  geo.computeVertexNormals();
+  return geo;
+}
+
+function makeBirdWingGeo(side: -1 | 1): THREE.BufferGeometry {
+  const shape = new THREE.Shape();
+  shape.moveTo(0, 0.04);
+  shape.quadraticCurveTo(side * 0.24, 0.1, side * 0.46, 0.02);
+  shape.quadraticCurveTo(side * 0.52, -0.06, side * 0.4, -0.13);
+  shape.quadraticCurveTo(side * 0.28, -0.17, side * 0.18, -0.14);
+  shape.quadraticCurveTo(side * 0.08, -0.17, 0, -0.1);
+  shape.closePath();
+
+  const geo = new THREE.ExtrudeGeometry(shape, {
+    depth: 0.025,
+    bevelEnabled: true,
+    bevelSegments: 3,
+    curveSegments: 12,
+    bevelSize: 0.012,
+    bevelThickness: 0.012,
+  });
+  geo.rotateX(Math.PI / 2);
+  return geo;
+}
+
+function makeBirdTailGeo(): THREE.BufferGeometry {
+  const shape = new THREE.Shape();
+  shape.moveTo(-0.04, 0);
+  shape.quadraticCurveTo(-0.13, -0.18, -0.09, -0.26);
+  shape.quadraticCurveTo(0, -0.32, 0.09, -0.26);
+  shape.quadraticCurveTo(0.13, -0.18, 0.04, 0);
+  shape.closePath();
+
+  const geo = new THREE.ExtrudeGeometry(shape, {
+    depth: 0.02,
+    bevelEnabled: true,
+    bevelSegments: 2,
+    curveSegments: 10,
+    bevelSize: 0.01,
+    bevelThickness: 0.01,
+  });
+  geo.rotateX(Math.PI / 2);
+  return geo;
+}
+
+function makeFishFinGeo(w: number, h: number): THREE.BufferGeometry {
+  const shape = new THREE.Shape();
+  shape.moveTo(0, 0);
+  shape.quadraticCurveTo(w * 0.45, h * 0.65, w * 0.95, h * 0.92);
+  shape.quadraticCurveTo(w * 1.1, h * 0.2, w * 0.72, -h * 0.48);
+  shape.quadraticCurveTo(w * 0.35, -h * 0.3, 0, 0);
+  const geo = new THREE.ExtrudeGeometry(shape, {
+    depth: 0.016,
+    bevelEnabled: true,
+    bevelSegments: 2,
+    curveSegments: 10,
+    bevelSize: 0.008,
+    bevelThickness: 0.008,
+  });
+  geo.center();
+  return geo;
+}
+
+function makeCuteAnimalEye(
+  irisHex: string,
+  radius: number,
+  eyelidMat: THREE.Material
+): THREE.Group {
   const g = new THREE.Group();
-  const whiteMat = new THREE.MeshPhysicalMaterial({ color: 0xffffff, roughness: 0.18, clearcoat: 0.5 });
+  const whiteMat = new THREE.MeshPhysicalMaterial({ color: 0xffffff, roughness: 0.16, clearcoat: 0.55 });
   const irisMat = new THREE.MeshPhysicalMaterial({
     map: createEyeIrisTexture(irisHex),
     roughness: 0.06,
@@ -150,84 +234,99 @@ function makeCuteAnimalEye(irisHex: string, radius: number): THREE.Group {
   const catchMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
   catchMat.userData.sharedResource = true;
 
-  const sclera = new THREE.Mesh(new THREE.SphereGeometry(radius, 12, 10), whiteMat);
-  sclera.scale.set(0.95, 1.08, 0.58);
-  const iris = new THREE.Mesh(new THREE.SphereGeometry(radius * 0.82, 12, 10), irisMat);
+  const sclera = new THREE.Mesh(new THREE.SphereGeometry(radius, 18, 14), whiteMat);
+  sclera.scale.set(0.95, 1.08, 0.62);
+  const iris = new THREE.Mesh(new THREE.SphereGeometry(radius * 0.82, 18, 14), irisMat);
   iris.scale.set(0.95, 1.06, 0.42);
   iris.position.z = radius * 0.42;
   iris.rotation.y = -Math.PI / 2;
 
-  const sp1 = new THREE.Mesh(new THREE.SphereGeometry(radius * 0.2, 8, 8), catchMat);
-  sp1.position.set(-radius * 0.26, radius * 0.3, radius * 0.72);
+  const sp1 = new THREE.Mesh(new THREE.SphereGeometry(radius * 0.2, 10, 8), catchMat);
+  sp1.position.set(-radius * 0.26, radius * 0.3, radius * 0.75);
   const sp2 = new THREE.Mesh(new THREE.SphereGeometry(radius * 0.11, 8, 8), catchMat);
-  sp2.position.set(radius * 0.24, -radius * 0.2, radius * 0.7);
+  sp2.position.set(radius * 0.24, -radius * 0.2, radius * 0.72);
 
-  g.add(sclera, iris, sp1, sp2);
+  // Sculpted protruding upper eyelid hood
+  const lid = new THREE.Mesh(
+    new THREE.TorusGeometry(radius * 1.02, radius * 0.24, 10, 18, Math.PI * 0.86),
+    eyelidMat
+  );
+  lid.rotation.z = Math.PI * 0.07;
+  lid.rotation.x = 0.22;
+  lid.position.set(0, radius * 0.14, radius * 0.24);
+
+  g.add(sclera, iris, sp1, sp2, lid);
   return g;
 }
 
 function createFlyingBird(accentColor: string): AnimalRig {
   const root = new THREE.Group();
   const accentMeshes: THREE.Mesh[] = [];
-  const bodyMat = new THREE.MeshPhysicalMaterial({ color: accentColor, roughness: 0.52, clearcoat: 0.22 });
+  const bodyMat = new THREE.MeshPhysicalMaterial({ color: accentColor, roughness: 0.46, clearcoat: 0.28 });
   const bellyMat = new THREE.MeshPhysicalMaterial({ color: 0xfefce8, roughness: 0.65 });
-  const beakMat = new THREE.MeshPhysicalMaterial({ color: 0xf97316, roughness: 0.32, clearcoat: 0.5 });
+  const beakMat = new THREE.MeshPhysicalMaterial({ color: 0xf97316, roughness: 0.3, clearcoat: 0.5 });
 
   const baseBodyY = 1.05;
   const bodyPivot = new THREE.Group();
   bodyPivot.position.y = baseBodyY;
   root.add(bodyPivot);
 
-  const torso = new THREE.Mesh(new THREE.SphereGeometry(0.22, 18, 16), bodyMat);
-  torso.scale.set(0.95, 0.9, 1.35);
-  addOutline(torso, 1.045);
+  const torso = new THREE.Mesh(new THREE.SphereGeometry(0.22, 24, 18), bodyMat);
+  torso.scale.set(0.95, 0.92, 1.35);
+  addOutline(torso, 1.04);
   bodyPivot.add(torso);
   accentMeshes.push(torso);
 
-  const belly = new THREE.Mesh(new THREE.SphereGeometry(0.17, 12, 10), bellyMat);
-  belly.position.set(0, -0.05, 0.04);
+  const belly = new THREE.Mesh(new THREE.SphereGeometry(0.175, 18, 14), bellyMat);
+  belly.scale.set(0.92, 0.85, 1.15);
+  belly.position.set(0, -0.05, 0.05);
   bodyPivot.add(belly);
 
   const headPivot = new THREE.Group();
   headPivot.position.set(0, 0.16, 0.24);
   bodyPivot.add(headPivot);
 
-  const head = new THREE.Mesh(new THREE.SphereGeometry(0.16, 18, 16), bodyMat);
-  addOutline(head, 1.045);
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.165, 24, 18), bodyMat);
+  head.scale.set(1.06, 0.98, 1.02);
+  addOutline(head, 1.04);
   headPivot.add(head);
   accentMeshes.push(head);
 
-  const crest = new THREE.Mesh(new THREE.ConeGeometry(0.05, 0.16, 6), bodyMat);
-  crest.position.set(0, 0.18, -0.03);
-  crest.rotation.x = -0.35;
-  addOutline(crest, 1.05);
+  const crestCurve = new THREE.CatmullRomCurve3([
+    new THREE.Vector3(0, 0.12, 0.02),
+    new THREE.Vector3(0, 0.21, -0.03),
+    new THREE.Vector3(0, 0.26, -0.1),
+  ]);
+  const crest = new THREE.Mesh(new THREE.TubeGeometry(crestCurve, 10, 0.032, 10, false), bodyMat);
+  addOutline(crest, 1.045);
   headPivot.add(crest);
   accentMeshes.push(crest);
 
-  const beak = new THREE.Mesh(new THREE.ConeGeometry(0.055, 0.16, 8), beakMat);
+  const beak = new THREE.Mesh(new THREE.ConeGeometry(0.052, 0.14, 14), beakMat);
   beak.rotation.x = Math.PI / 2;
-  beak.position.set(0, -0.01, 0.18);
-  addOutline(beak, 1.05);
+  beak.scale.set(1.1, 1, 0.75);
+  beak.position.set(0, 0.005, 0.185);
+  addOutline(beak, 1.045);
   headPivot.add(beak);
 
-  const mouthMesh = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.02, 0.08), beakMat);
-  mouthMesh.position.set(0, -0.04, 0.14);
+  const mouthMesh = new THREE.Mesh(new THREE.SphereGeometry(0.034, 12, 10), beakMat);
+  mouthMesh.scale.set(1.15, 0.45, 1.3);
+  mouthMesh.position.set(0, -0.028, 0.155);
   headPivot.add(mouthMesh);
 
-  const eyeL = makeCuteAnimalEye('#b45309', 0.042);
-  eyeL.position.set(-0.088, 0.055, 0.118);
+  const eyeL = makeCuteAnimalEye('#b45309', 0.044, bodyMat);
+  eyeL.position.set(-0.092, 0.052, 0.118);
   eyeL.rotation.y = -0.35;
-  const eyeR = makeCuteAnimalEye('#b45309', 0.042);
-  eyeR.position.set(0.088, 0.055, 0.118);
+  const eyeR = makeCuteAnimalEye('#b45309', 0.044, bodyMat);
+  eyeR.position.set(0.092, 0.052, 0.118);
   eyeR.rotation.y = 0.35;
   headPivot.add(eyeL, eyeR);
 
   const makeWing = (side: -1 | 1) => {
     const wp = new THREE.Group();
-    wp.position.set(side * 0.18, 0.06, 0);
-    const wing = new THREE.Mesh(new THREE.BoxGeometry(0.48, 0.04, 0.24), bodyMat);
-    wing.position.set(side * 0.22, 0, -0.02);
-    addOutline(wing, 1.05);
+    wp.position.set(side * 0.18, 0.06, 0.02);
+    const wing = new THREE.Mesh(makeBirdWingGeo(side), bodyMat);
+    addOutline(wing, 1.04);
     wp.add(wing);
     accentMeshes.push(wing);
     bodyPivot.add(wp);
@@ -237,11 +336,10 @@ function createFlyingBird(accentColor: string): AnimalRig {
   const rightWingPivot = makeWing(1);
 
   const tailPivot = new THREE.Group();
-  tailPivot.position.set(0, 0.02, -0.26);
-  const tail = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.03, 0.26), bodyMat);
-  tail.position.set(0, 0, -0.1);
-  tail.rotation.x = 0.18;
-  addOutline(tail, 1.05);
+  tailPivot.position.set(0, 0.02, -0.25);
+  const tail = new THREE.Mesh(makeBirdTailGeo(), bodyMat);
+  tail.rotation.x = 0.16;
+  addOutline(tail, 1.045);
   tailPivot.add(tail);
   accentMeshes.push(tail);
   bodyPivot.add(tailPivot);
@@ -249,9 +347,11 @@ function createFlyingBird(accentColor: string): AnimalRig {
   const makeFoot = (side: -1 | 1) => {
     const leg = new THREE.Group();
     leg.position.set(side * 0.07, -0.18, 0);
-    const stick = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.015, 0.14, 6), beakMat);
-    stick.position.y = -0.06;
-    leg.add(stick);
+    const stick = new THREE.Mesh(makeTaperedAnimalLimb(0.018, 0.014, 0.012, 0.12, 10), beakMat);
+    const claw = new THREE.Mesh(new THREE.SphereGeometry(0.024, 10, 8), beakMat);
+    claw.scale.set(1.2, 0.5, 1.4);
+    claw.position.set(0, -0.12, 0.018);
+    leg.add(stick, claw);
     bodyPivot.add(leg);
     return leg;
   };
@@ -302,40 +402,41 @@ function createFish(accentColor: string): AnimalRig {
   bodyPivot.position.y = baseBodyY;
   root.add(bodyPivot);
 
-  const torso = new THREE.Mesh(new THREE.SphereGeometry(0.26, 18, 14), bodyMat);
-  torso.scale.set(0.72, 0.95, 1.48);
+  const torso = new THREE.Mesh(new THREE.SphereGeometry(0.26, 24, 18), bodyMat);
+  torso.scale.set(0.74, 0.96, 1.48);
   addOutline(torso, 1.04);
   bodyPivot.add(torso);
   accentMeshes.push(torso);
 
-  const dorsal = new THREE.Mesh(new THREE.ConeGeometry(0.1, 0.24, 4), finMat);
-  dorsal.position.set(0, 0.26, -0.02);
-  dorsal.rotation.x = -0.35;
-  addOutline(dorsal, 1.05);
+  const dorsal = new THREE.Mesh(makeFishFinGeo(0.24, 0.22), finMat);
+  dorsal.rotation.y = Math.PI / 2;
+  dorsal.position.set(0, 0.24, -0.02);
+  addOutline(dorsal, 1.04);
   bodyPivot.add(dorsal);
 
   const headPivot = new THREE.Group();
   headPivot.position.set(0, 0.02, 0.26);
   bodyPivot.add(headPivot);
 
-  const eyeL = makeCuteAnimalEye('#0284c7', 0.05);
-  eyeL.position.set(-0.145, 0.07, 0.015);
+  const eyeL = makeCuteAnimalEye('#0284c7', 0.052, bodyMat);
+  eyeL.position.set(-0.148, 0.07, 0.015);
   eyeL.rotation.y = -Math.PI / 2.6;
-  const eyeR = makeCuteAnimalEye('#0284c7', 0.05);
-  eyeR.position.set(0.145, 0.07, 0.015);
+  const eyeR = makeCuteAnimalEye('#0284c7', 0.052, bodyMat);
+  eyeR.position.set(0.148, 0.07, 0.015);
   eyeR.rotation.y = Math.PI / 2.6;
   headPivot.add(eyeL, eyeR);
 
-  const mouthMesh = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.04, 0.05), finMat);
-  mouthMesh.position.set(0, -0.04, 0.14);
+  const mouthMesh = new THREE.Mesh(new THREE.TorusGeometry(0.036, 0.016, 10, 18), finMat);
+  mouthMesh.position.set(0, -0.04, 0.13);
   headPivot.add(mouthMesh);
 
   const makeFin = (side: -1 | 1) => {
     const fp = new THREE.Group();
     fp.position.set(side * 0.18, -0.04, 0.06);
-    const fin = new THREE.Mesh(new THREE.ConeGeometry(0.09, 0.2, 4), finMat);
-    fin.rotation.z = side * -1.1;
-    fin.position.set(side * 0.09, 0, -0.04);
+    const fin = new THREE.Mesh(makeFishFinGeo(0.18, 0.14), finMat);
+    fin.rotation.y = side * 0.65;
+    fin.position.set(side * 0.07, 0, -0.04);
+    addOutline(fin, 1.04);
     fp.add(fin);
     bodyPivot.add(fp);
     return fp;
@@ -344,11 +445,11 @@ function createFish(accentColor: string): AnimalRig {
   const rightWingPivot = makeFin(1);
 
   const tailPivot = new THREE.Group();
-  tailPivot.position.set(0, 0, -0.36);
-  const tail = new THREE.Mesh(new THREE.ConeGeometry(0.22, 0.3, 4), finMat);
-  tail.rotation.x = Math.PI / 2;
-  tail.scale.set(0.35, 1, 1.2);
-  tail.position.z = -0.12;
+  tailPivot.position.set(0, 0, -0.35);
+  const tail = new THREE.Mesh(makeFishFinGeo(0.28, 0.28), finMat);
+  tail.rotation.y = -Math.PI / 2;
+  tail.position.z = -0.14;
+  addOutline(tail, 1.04);
   tailPivot.add(tail);
   bodyPivot.add(tailPivot);
 
@@ -485,16 +586,22 @@ function createQuadrupedOrBipedAnimal(
     accentMeshes.push(neck);
   }
 
-  const headRadius = (isElephant ? 0.24 : isRabbit ? 0.19 : 0.22) * scaleFactor;
-  const head = new THREE.Mesh(new THREE.SphereGeometry(headRadius, 20, 16), furMat);
+  const innerEarMat = new THREE.MeshPhysicalMaterial({
+    color: isElephant ? 0xfda4af : isRabbit || isCat ? 0xfbcfe8 : 0xfde68a,
+    roughness: 0.65,
+  });
+
+  const headRadius = (isElephant ? 0.24 : isRabbit ? 0.195 : 0.225) * scaleFactor;
+  const head = new THREE.Mesh(new THREE.SphereGeometry(headRadius, 28, 22), furMat);
+  head.scale.set(1.09, 0.96, 1.03);
   head.position.y = 0.14 * scaleFactor;
-  addOutline(head, 1.04);
+  addOutline(head, 1.036);
   headPivot.add(head);
   accentMeshes.push(head);
 
   if (isLion) {
     const maneMat = new THREE.MeshPhysicalMaterial({ color: 0x78350f, roughness: 0.78 });
-    const mane = new THREE.Mesh(new THREE.TorusGeometry(0.21 * scaleFactor, 0.085 * scaleFactor, 10, 20), maneMat);
+    const mane = new THREE.Mesh(new THREE.TorusGeometry(0.21 * scaleFactor, 0.085 * scaleFactor, 12, 24), maneMat);
     mane.position.set(0, 0.14 * scaleFactor, 0.02 * scaleFactor);
     addOutline(mane, 1.04);
     headPivot.add(mane);
@@ -503,97 +610,138 @@ function createQuadrupedOrBipedAnimal(
   let trunkPivot: THREE.Group | undefined;
   if (isElephant) {
     trunkPivot = new THREE.Group();
-    trunkPivot.position.set(0, 0.1 * scaleFactor, 0.22 * scaleFactor);
+    trunkPivot.position.set(0, 0.1 * scaleFactor, 0.21 * scaleFactor);
+    const trunkCurve = new THREE.CatmullRomCurve3([
+      new THREE.Vector3(0, 0, 0),
+      new THREE.Vector3(0, -0.14 * scaleFactor, 0.09 * scaleFactor),
+      new THREE.Vector3(0, -0.28 * scaleFactor, 0.14 * scaleFactor),
+      new THREE.Vector3(0, -0.34 * scaleFactor, 0.24 * scaleFactor),
+    ]);
     const trunk1 = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.065 * scaleFactor, 0.05 * scaleFactor, 0.44 * scaleFactor, 10),
+      new THREE.TubeGeometry(trunkCurve, 14, 0.056 * scaleFactor, 12, false),
       furMat
     );
-    trunk1.position.set(0, -0.18 * scaleFactor, 0.08 * scaleFactor);
-    trunk1.rotation.x = -0.35;
-    addOutline(trunk1, 1.05);
+    addOutline(trunk1, 1.045);
     trunkPivot.add(trunk1);
     accentMeshes.push(trunk1);
 
     const tuskMat = new THREE.MeshPhysicalMaterial({ color: 0xfefce8, roughness: 0.25, clearcoat: 0.5 });
     [-0.1, 0.1].forEach((tx) => {
-      const tusk = new THREE.Mesh(new THREE.ConeGeometry(0.03 * scaleFactor, 0.2 * scaleFactor, 8), tuskMat);
+      const tusk = new THREE.Mesh(new THREE.ConeGeometry(0.03 * scaleFactor, 0.2 * scaleFactor, 10), tuskMat);
       tusk.position.set(tx * scaleFactor, 0.02 * scaleFactor, 0.24 * scaleFactor);
       tusk.rotation.x = Math.PI / 2.2;
       headPivot.add(tusk);
     });
     headPivot.add(trunkPivot);
   } else {
-    const snout = new THREE.Mesh(new THREE.SphereGeometry(0.1 * scaleFactor, 12, 10), bellyMat);
-    snout.scale.set(1.05, 0.82, isHorse ? 1.6 : 1.2);
-    snout.position.set(0, 0.1 * scaleFactor, (isHorse ? 0.22 : 0.18) * scaleFactor);
+    // Sculpted rounded animal snout + puffy dual whisker pads
+    const snout = new THREE.Mesh(new THREE.SphereGeometry(0.095 * scaleFactor, 18, 14), bellyMat);
+    snout.scale.set(1.12, 0.82, isHorse ? 1.55 : 1.15);
+    snout.position.set(0, 0.095 * scaleFactor, (isHorse ? 0.22 : 0.17) * scaleFactor);
     headPivot.add(snout);
+
+    [-1, 1].forEach((side) => {
+      const pad = new THREE.Mesh(new THREE.SphereGeometry(0.052 * scaleFactor, 14, 12), bellyMat);
+      pad.scale.set(1.05, 0.9, 0.95);
+      pad.position.set(
+        side * 0.044 * scaleFactor,
+        0.092 * scaleFactor,
+        (isHorse ? 0.27 : 0.21) * scaleFactor
+      );
+      headPivot.add(pad);
+    });
   }
 
   const nose = new THREE.Mesh(
-    new THREE.SphereGeometry(0.04 * scaleFactor, 10, 8),
+    new THREE.SphereGeometry(0.042 * scaleFactor, 14, 12),
     isCat || isRabbit || isTiger ? mouthMat : darkMat
   );
-  nose.position.set(0, 0.13 * scaleFactor, (isElephant ? 0.24 : isHorse ? 0.34 : 0.28) * scaleFactor);
+  nose.scale.set(1.18, 0.82, 0.9);
+  nose.position.set(0, 0.132 * scaleFactor, (isElephant ? 0.24 : isHorse ? 0.34 : 0.265) * scaleFactor);
   if (!isElephant) headPivot.add(nose);
 
   const animalIrisHex = isCat ? '#16a34a' : isElephant ? '#0284c7' : '#b45309';
-  const eyeL = makeCuteAnimalEye(animalIrisHex, 0.048 * scaleFactor);
-  eyeL.position.set(-0.095 * scaleFactor, 0.195 * scaleFactor, 0.18 * scaleFactor);
-  const eyeR = makeCuteAnimalEye(animalIrisHex, 0.048 * scaleFactor);
-  eyeR.position.set(0.095 * scaleFactor, 0.195 * scaleFactor, 0.18 * scaleFactor);
+  const eyeL = makeCuteAnimalEye(animalIrisHex, 0.05 * scaleFactor, furMat);
+  eyeL.position.set(-0.098 * scaleFactor, 0.195 * scaleFactor, 0.18 * scaleFactor);
+  const eyeR = makeCuteAnimalEye(animalIrisHex, 0.05 * scaleFactor, furMat);
+  eyeR.position.set(0.098 * scaleFactor, 0.195 * scaleFactor, 0.18 * scaleFactor);
   headPivot.add(eyeL, eyeR);
 
   // Cute rosy cheek blushes
   const blushMat = new THREE.MeshPhysicalMaterial({ color: 0xfb7185, transparent: true, opacity: 0.42, roughness: 0.7 });
   [-1, 1].forEach((side) => {
-    const blush = new THREE.Mesh(new THREE.SphereGeometry(0.036 * scaleFactor, 10, 8), blushMat);
-    blush.scale.set(1.2, 0.7, 0.35);
-    blush.position.set(side * 0.13 * scaleFactor, 0.125 * scaleFactor, 0.175 * scaleFactor);
+    const blush = new THREE.Mesh(new THREE.SphereGeometry(0.036 * scaleFactor, 12, 10), blushMat);
+    blush.scale.set(1.2, 0.72, 0.35);
+    blush.position.set(side * 0.135 * scaleFactor, 0.125 * scaleFactor, 0.175 * scaleFactor);
     headPivot.add(blush);
   });
 
   const mouthMesh = new THREE.Mesh(
-    new THREE.BoxGeometry(0.075 * scaleFactor, 0.028 * scaleFactor, 0.05 * scaleFactor),
+    new THREE.SphereGeometry(0.038 * scaleFactor, 14, 10),
     mouthMat
   );
-  mouthMesh.position.set(0, 0.04 * scaleFactor, 0.2 * scaleFactor);
+  mouthMesh.scale.set(1.3, 0.42, 0.85);
+  mouthMesh.position.set(0, 0.045 * scaleFactor, 0.21 * scaleFactor);
   headPivot.add(mouthMesh);
 
-  // Ears
+  // Layered Curved Ears (Outer fur + Inner warm ear cup)
   const makeEar = (side: -1 | 1) => {
     const ep = new THREE.Group();
     if (isRabbit) {
-      ep.position.set(side * 0.09 * scaleFactor, 0.32 * scaleFactor, 0);
-      const ear = new THREE.Mesh(new THREE.CapsuleGeometry(0.045 * scaleFactor, 0.28 * scaleFactor, 6, 10), furMat);
-      ear.position.y = 0.16 * scaleFactor;
-      ear.rotation.z = side * -0.15;
-      ep.add(ear);
+      ep.position.set(side * 0.09 * scaleFactor, 0.31 * scaleFactor, 0);
+      const ear = new THREE.Mesh(makeTaperedAnimalLimb(0.042 * scaleFactor, 0.052 * scaleFactor, 0.034 * scaleFactor, 0.28 * scaleFactor, 14), furMat);
+      ear.rotation.z = Math.PI + side * -0.15;
+      ear.rotation.x = -0.12;
+      const inner = new THREE.Mesh(makeTaperedAnimalLimb(0.025 * scaleFactor, 0.032 * scaleFactor, 0.02 * scaleFactor, 0.2 * scaleFactor, 12), innerEarMat);
+      inner.position.set(0, 0.03 * scaleFactor, 0.018 * scaleFactor);
+      inner.rotation.z = Math.PI + side * -0.15;
+      inner.rotation.x = -0.12;
+      addOutline(ear, 1.04);
+      ep.add(ear, inner);
       accentMeshes.push(ear);
     } else if (isElephant) {
-      ep.position.set(side * 0.22 * scaleFactor, 0.16 * scaleFactor, -0.02);
-      const ear = new THREE.Mesh(new THREE.SphereGeometry(0.2 * scaleFactor, 12, 10), furMat);
-      ear.scale.set(0.95, 1.15, 0.2);
+      ep.position.set(side * 0.21 * scaleFactor, 0.16 * scaleFactor, -0.02);
+      const ear = new THREE.Mesh(new THREE.SphereGeometry(0.21 * scaleFactor, 18, 14), furMat);
+      ear.scale.set(0.95, 1.18, 0.22);
       ear.position.set(side * 0.12 * scaleFactor, 0, -0.04);
-      ep.add(ear);
+      addOutline(ear, 1.04);
+      const inner = new THREE.Mesh(new THREE.SphereGeometry(0.145 * scaleFactor, 14, 12), innerEarMat);
+      inner.scale.set(0.88, 1.08, 0.18);
+      inner.position.set(side * 0.12 * scaleFactor, -0.01 * scaleFactor, -0.018);
+      ep.add(ear, inner);
       accentMeshes.push(ear);
     } else if (isCat || isHorse) {
-      ep.position.set(side * 0.13 * scaleFactor, 0.32 * scaleFactor, 0);
-      const ear = new THREE.Mesh(new THREE.ConeGeometry(0.07 * scaleFactor, 0.16 * scaleFactor, 6), furMat);
-      ear.rotation.z = side * -0.2;
-      ep.add(ear);
+      ep.position.set(side * 0.135 * scaleFactor, 0.3 * scaleFactor, 0);
+      const ear = new THREE.Mesh(new THREE.ConeGeometry(0.072 * scaleFactor, 0.165 * scaleFactor, 14), furMat);
+      ear.scale.set(1.0, 1.0, 0.65);
+      ear.rotation.z = side * -0.22;
+      addOutline(ear, 1.045);
+      const inner = new THREE.Mesh(new THREE.ConeGeometry(0.044 * scaleFactor, 0.11 * scaleFactor, 12), innerEarMat);
+      inner.scale.set(1.0, 1.0, 0.55);
+      inner.position.set(side * 0.004 * scaleFactor, -0.01 * scaleFactor, 0.022 * scaleFactor);
+      inner.rotation.z = side * -0.22;
+      ep.add(ear, inner);
       accentMeshes.push(ear);
     } else if (kind === 'dog') {
-      ep.position.set(side * 0.18 * scaleFactor, 0.22 * scaleFactor, 0.02);
-      const ear = new THREE.Mesh(new THREE.CapsuleGeometry(0.048 * scaleFactor, 0.14 * scaleFactor, 6, 10), furMat);
-      ear.position.set(side * 0.03 * scaleFactor, -0.08 * scaleFactor, 0);
-      ear.rotation.z = side * -0.22;
+      ep.position.set(side * 0.185 * scaleFactor, 0.23 * scaleFactor, 0.02);
+      const flopCurve = new THREE.CatmullRomCurve3([
+        new THREE.Vector3(0, 0, 0),
+        new THREE.Vector3(side * 0.05 * scaleFactor, -0.08 * scaleFactor, 0.02 * scaleFactor),
+        new THREE.Vector3(side * 0.04 * scaleFactor, -0.17 * scaleFactor, 0.04 * scaleFactor),
+      ]);
+      const ear = new THREE.Mesh(new THREE.TubeGeometry(flopCurve, 10, 0.046 * scaleFactor, 12, false), furMat);
+      addOutline(ear, 1.045);
       ep.add(ear);
       accentMeshes.push(ear);
     } else {
       ep.position.set(side * 0.17 * scaleFactor, 0.28 * scaleFactor, 0);
-      const ear = new THREE.Mesh(new THREE.SphereGeometry(0.068 * scaleFactor, 10, 8), furMat);
-      ear.scale.set(1, 1, 0.5);
-      ep.add(ear);
+      const ear = new THREE.Mesh(new THREE.SphereGeometry(0.068 * scaleFactor, 16, 12), furMat);
+      ear.scale.set(1, 1, 0.52);
+      addOutline(ear, 1.045);
+      const inner = new THREE.Mesh(new THREE.SphereGeometry(0.044 * scaleFactor, 12, 10), innerEarMat);
+      inner.scale.set(0.95, 0.95, 0.45);
+      inner.position.z = 0.014 * scaleFactor;
+      ep.add(ear, inner);
       accentMeshes.push(ear);
     }
     headPivot.add(ep);
@@ -602,49 +750,90 @@ function createQuadrupedOrBipedAnimal(
   const leftEarPivot = makeEar(-1);
   const rightEarPivot = makeEar(1);
 
-  // Tail
+  // Organic Curved Tail (CatmullRomCurve3 TubeGeometry)
   const tailPivot = new THREE.Group();
-  tailPivot.position.set(0, 0.2 * scaleFactor, -0.26 * scaleFactor);
+  tailPivot.position.set(0, 0.2 * scaleFactor, -0.25 * scaleFactor);
   if (isRabbit) {
-    const puff = new THREE.Mesh(new THREE.SphereGeometry(0.08 * scaleFactor, 10, 8), bellyMat);
+    const puff = new THREE.Mesh(new THREE.SphereGeometry(0.085 * scaleFactor, 14, 12), bellyMat);
     puff.position.set(0, 0, -0.05);
+    addOutline(puff, 1.04);
     tailPivot.add(puff);
   } else {
-    const tLen = isMonkey ? 0.42 : isHorse || isLion ? 0.36 : 0.2;
+    const tailPts = isMonkey
+      ? [
+          new THREE.Vector3(0, 0, 0),
+          new THREE.Vector3(0, 0.16 * scaleFactor, -0.14 * scaleFactor),
+          new THREE.Vector3(0.05 * scaleFactor, 0.34 * scaleFactor, -0.18 * scaleFactor),
+          new THREE.Vector3(0.02 * scaleFactor, 0.44 * scaleFactor, -0.06 * scaleFactor),
+        ]
+      : isHorse || isLion
+        ? [
+            new THREE.Vector3(0, 0, 0),
+            new THREE.Vector3(0, 0.08 * scaleFactor, -0.14 * scaleFactor),
+            new THREE.Vector3(0, -0.08 * scaleFactor, -0.24 * scaleFactor),
+            new THREE.Vector3(0, -0.2 * scaleFactor, -0.28 * scaleFactor),
+          ]
+        : [
+            new THREE.Vector3(0, 0, 0),
+            new THREE.Vector3(0, 0.1 * scaleFactor, -0.1 * scaleFactor),
+            new THREE.Vector3(0, 0.22 * scaleFactor, -0.08 * scaleFactor),
+          ];
+    const tailCurve = new THREE.CatmullRomCurve3(tailPts);
     const tail = new THREE.Mesh(
-      new THREE.CapsuleGeometry(0.036 * scaleFactor, tLen * scaleFactor, 6, 8),
+      new THREE.TubeGeometry(tailCurve, 14, (isElephant ? 0.026 : 0.035) * scaleFactor, 10, false),
       furMat
     );
-    tail.position.set(0, 0.14 * scaleFactor, -0.1 * scaleFactor);
-    tail.rotation.x = isMonkey ? -0.35 : -0.65;
+    addOutline(tail, 1.045);
     tailPivot.add(tail);
     accentMeshes.push(tail);
+    if (isLion || isElephant) {
+      const tuft = new THREE.Mesh(new THREE.SphereGeometry(0.056 * scaleFactor, 12, 10), darkMat);
+      const endPt = tailPts[tailPts.length - 1];
+      tuft.position.copy(endPt);
+      tailPivot.add(tuft);
+    }
   }
   bodyPivot.add(tailPivot);
 
-  // Legs
+  // Tapered LatheGeometry Legs + Sculpted Multi-Toe Paws
   const legLen = isHorse ? 0.44 : isElephant ? 0.36 : 0.24;
-  const legRad = isElephant ? 0.095 : isHorse ? 0.048 : 0.055;
+  const legRad = isElephant ? 0.096 : isHorse ? 0.052 : 0.058;
   const makeLeg = (x: number, z: number) => {
     const leg = new THREE.Group();
     leg.position.set(x * scaleFactor, 0.04 * scaleFactor, z * scaleFactor);
     const limb = new THREE.Mesh(
-      new THREE.CapsuleGeometry(legRad * scaleFactor, legLen * scaleFactor, 6, 10),
+      makeTaperedAnimalLimb(
+        legRad * 1.18 * scaleFactor,
+        legRad * 0.92 * scaleFactor,
+        legRad * 0.78 * scaleFactor,
+        legLen * scaleFactor,
+        14
+      ),
       furMat
     );
-    limb.position.y = -(legLen * 0.65) * scaleFactor;
-    addOutline(limb, 1.055);
+    addOutline(limb, 1.045);
     leg.add(limb);
     accentMeshes.push(limb);
 
     const paw = new THREE.Mesh(
-      new THREE.SphereGeometry(legRad * 1.12 * scaleFactor, 10, 8),
+      new THREE.SphereGeometry(legRad * 1.12 * scaleFactor, 14, 10),
       isHorse ? darkMat : bellyMat
     );
-    paw.scale.set(1, 0.65, 1.2);
-    paw.position.set(0, -(legLen + 0.11) * scaleFactor, 0.02 * scaleFactor);
-    addOutline(paw, 1.05);
+    paw.scale.set(1.04, 0.65, 1.24);
+    paw.position.set(0, -(legLen + 0.02) * scaleFactor, 0.025 * scaleFactor);
+    addOutline(paw, 1.045);
     leg.add(paw);
+
+    if (!isHorse && !isElephant) {
+      [-0.028, 0, 0.028].forEach((tx) => {
+        const toe = new THREE.Mesh(
+          new THREE.SphereGeometry(legRad * 0.36 * scaleFactor, 8, 8),
+          bellyMat
+        );
+        toe.position.set(tx * scaleFactor, -(legLen + 0.03) * scaleFactor, (0.072 - Math.abs(tx) * 0.25) * scaleFactor);
+        leg.add(toe);
+      });
+    }
 
     bodyPivot.add(leg);
     return leg;
@@ -892,7 +1081,9 @@ export function disposeAnimalRig(rig: AnimalRig): void {
     if ((obj as THREE.Mesh).isMesh || (obj as THREE.Sprite).isSprite) {
       const m = obj as THREE.Mesh;
       if (m.userData?.isOutline) return;
-      if (m.geometry && !m.userData?.sharedResource) m.geometry.dispose();
+      if (m.geometry && !m.userData?.sharedResource && !m.geometry.userData?.sharedResource) {
+        m.geometry.dispose();
+      }
       if (Array.isArray(m.material)) {
         m.material.forEach((mt) => {
           if (mt.userData?.sharedResource) return;

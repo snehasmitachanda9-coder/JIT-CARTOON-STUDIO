@@ -397,6 +397,126 @@ export function createChibiFaceTexture(
   return tex;
 }
 
+const skinTextureCache = new Map<string, THREE.CanvasTexture>();
+
+export function createChibiSkinTexture(
+  skinHex: number,
+  hasFreckles = false,
+  isFemale = false,
+  maxAnisotropy = 4
+): THREE.CanvasTexture {
+  const key = `skin_${skinHex.toString(16)}_${hasFreckles ? 1 : 0}_${isFemale ? 1 : 0}`;
+  const cached = skinTextureCache.get(key);
+  if (cached) return cached;
+
+  const canvas = document.createElement('canvas');
+  canvas.width = 512;
+  canvas.height = 512;
+  const ctx = canvas.getContext('2d')!;
+
+  const baseSkin = new THREE.Color(skinHex);
+  const warmSkin = baseSkin.clone().offsetHSL(-0.01, 0.08, 0.06).getStyle();
+  const shadowSkin = baseSkin.clone().offsetHSL(-0.015, 0.08, -0.09).getStyle();
+  const peachBlush = baseSkin.clone().lerp(new THREE.Color(0xfb7185), 0.42).getStyle();
+
+  ctx.fillStyle = baseSkin.getStyle();
+  ctx.fillRect(0, 0, 512, 512);
+
+  // Soft subsurface glow across the front face (x=256, y=256)
+  const faceGlow = ctx.createRadialGradient(256, 248, 12, 256, 260, 138);
+  faceGlow.addColorStop(0, warmSkin);
+  faceGlow.addColorStop(0.65, baseSkin.getStyle());
+  faceGlow.addColorStop(1, shadowSkin);
+  ctx.fillStyle = faceGlow;
+  ctx.fillRect(0, 0, 512, 512);
+
+  const cx = 256;
+
+  // Soft warm orbital socket shadow behind recessed 3D eyeballs (no flat painted irises)
+  [-1, 1].forEach((side) => {
+    const eyeX = cx + side * 28;
+    const eyeY = 242;
+    ctx.save();
+    ctx.translate(eyeX, eyeY);
+    ctx.scale(0.5, 1);
+    const socketGrad = ctx.createRadialGradient(0, -3, 14, 0, 0, 48);
+    socketGrad.addColorStop(0, 'rgba(120, 58, 36, 0.34)');
+    socketGrad.addColorStop(0.6, 'rgba(130, 66, 42, 0.14)');
+    socketGrad.addColorStop(1, 'rgba(130, 66, 42, 0)');
+    ctx.fillStyle = socketGrad;
+    ctx.beginPath();
+    ctx.arc(0, 0, 48, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  });
+
+  // Rosy gradient cheeks + optional freckles
+  [-1, 1].forEach((side) => {
+    const cheekX = cx + side * 44;
+    const cheekY = 294;
+    ctx.save();
+    ctx.translate(cheekX, cheekY);
+    ctx.scale(0.56, 1);
+    const cg = ctx.createRadialGradient(0, 0, 3, 0, 0, 34);
+    cg.addColorStop(0, isFemale ? 'rgba(251, 113, 133, 0.56)' : 'rgba(251, 113, 133, 0.44)');
+    cg.addColorStop(0.55, 'rgba(251, 113, 133, 0.2)');
+    cg.addColorStop(1, 'rgba(251, 113, 133, 0)');
+    ctx.fillStyle = cg;
+    ctx.beginPath();
+    ctx.arc(0, 0, 34, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+
+    if (hasFreckles) {
+      ctx.fillStyle = 'rgba(175, 80, 52, 0.48)';
+      [
+        [-6, -4],
+        [3, -8],
+        [8, -1],
+        [-1, 4],
+      ].forEach(([fx, fy]) => {
+        ctx.beginPath();
+        ctx.ellipse(cheekX + fx * 0.5, cheekY + fy, 1.3, 2.3, 0, 0, Math.PI * 2);
+        ctx.fill();
+      });
+    }
+  });
+
+  // Warm peach nose bridge & tip blush
+  ctx.save();
+  ctx.translate(cx, 268);
+  ctx.scale(0.5, 1);
+  const noseGrad = ctx.createRadialGradient(0, 3, 2, 0, 0, 18);
+  noseGrad.addColorStop(0, peachBlush);
+  noseGrad.addColorStop(0.6, 'rgba(255, 228, 210, 0.28)');
+  noseGrad.addColorStop(1, 'rgba(255, 228, 210, 0)');
+  ctx.fillStyle = noseGrad;
+  ctx.beginPath();
+  ctx.arc(0, 0, 18, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+
+  // Subtle smile dimple shadow under mouth
+  ctx.save();
+  ctx.translate(cx, 314);
+  ctx.scale(0.5, 1);
+  ctx.strokeStyle = 'rgba(140, 62, 48, 0.24)';
+  ctx.lineWidth = 3;
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.arc(0, -8, 24, 0.4, Math.PI - 0.4);
+  ctx.stroke();
+  ctx.restore();
+
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = maxAnisotropy;
+  tex.needsUpdate = true;
+  tex.userData.sharedResource = true;
+  skinTextureCache.set(key, tex);
+  return tex;
+}
+
 export function createGrassTexture(maxAnisotropy = 4): THREE.CanvasTexture {
   const canvas = document.createElement('canvas');
   canvas.width = 512;

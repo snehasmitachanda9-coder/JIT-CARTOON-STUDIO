@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Box,
   Camera,
@@ -53,6 +53,12 @@ import {
   VEHICLE_META,
   VehicleKind,
 } from '../types/studio';
+import {
+  getCachedThumbnail,
+  getThumbnailKey,
+  requestThumbnails,
+  ThumbnailSpec,
+} from '../three/thumbnailRenderer';
 
 export type InspectorTab = 'cast' | 'scene' | 'ai3d' | 'voice';
 
@@ -314,6 +320,52 @@ export function InspectorPanel({
     );
   }, [libraryCategory, librarySearch]);
 
+  const [thumbMap, setThumbMap] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    const specs: ThumbnailSpec[] = [
+      ...customModels.map((bp) => ({
+        key: getThumbnailKey('custom', bp.id, bp.id),
+        actorType: 'custom' as ActorType,
+        kind: bp.id,
+        customBlueprint: bp,
+      })),
+      ...HUMAN_CHAR_KINDS.map((k) => ({
+        key: getThumbnailKey('character', k),
+        actorType: 'character' as ActorType,
+        kind: k,
+      })),
+      ...ANIMAL_KINDS.map((k) => ({
+        key: getThumbnailKey('animal', k),
+        actorType: 'animal' as ActorType,
+        kind: k,
+      })),
+      ...VEHICLE_AND_SCIFI_ITEMS.map((item) => ({
+        key: getThumbnailKey(item.actorType, item.kind),
+        actorType: item.actorType,
+        kind: item.kind,
+      })),
+      ...PROP_KINDS.map((k) => ({
+        key: getThumbnailKey('prop', k),
+        actorType: 'prop' as ActorType,
+        kind: k,
+      })),
+    ];
+
+    const initial: Record<string, string> = {};
+    specs.forEach((s) => {
+      const cached = getCachedThumbnail(s.key);
+      if (cached) initial[s.key] = cached;
+    });
+    if (Object.keys(initial).length > 0) {
+      setThumbMap((prev) => ({ ...initial, ...prev }));
+    }
+
+    return requestThumbnails(specs, (key, url) => {
+      setThumbMap((prev) => (prev[key] === url ? prev : { ...prev, [key]: url }));
+    });
+  }, [customModels]);
+
   const handleRunModelBuilder = async () => {
     const trimmed = modelPrompt.trim();
     if (!trimmed || isGeneratingModel) return;
@@ -494,30 +546,46 @@ export function InspectorPanel({
               />
             </div>
 
-            {/* Model Grid */}
-            <div className="grid grid-cols-2 gap-1.5 max-h-48 overflow-y-auto studio-scroll pr-0.5">
-              {libraryItems.map((item) => (
-                <button
-                  key={`${item.actorType}-${item.kind}`}
-                  type="button"
-                  onClick={() =>
-                    onOpenLibraryPicker(item.actorType, item.kind, item.label)
-                  }
-                  className="px-2.5 py-2 rounded-lg bg-[#171E2E] hover:bg-[#1E273B] border border-white/8 text-left transition-colors cursor-pointer flex items-center gap-1.5"
-                >
-                  <Plus className="w-3 h-3 text-amber-400 shrink-0" />
-                  <div className="min-w-0">
-                    <div className="text-xs font-medium text-slate-100 truncate">
-                      {item.label}
+            {/* Model Grid with 3D Thumbnails */}
+            <div className="grid grid-cols-2 gap-2 max-h-72 overflow-y-auto studio-scroll pr-0.5">
+              {libraryItems.map((item) => {
+                const thumbKey = getThumbnailKey(item.actorType, item.kind);
+                const thumbUrl = thumbMap[thumbKey];
+                return (
+                  <button
+                    key={`${item.actorType}-${item.kind}`}
+                    type="button"
+                    onClick={() =>
+                      onOpenLibraryPicker(item.actorType, item.kind, item.label)
+                    }
+                    className="p-1.5 rounded-xl bg-[#171E2E] hover:bg-[#1E273B] border border-white/10 hover:border-amber-400/50 text-left transition-all cursor-pointer flex flex-col gap-1.5 group"
+                  >
+                    <div className="h-24 w-full rounded-lg bg-[radial-gradient(circle_at_50%_38%,#27344f_0%,#0f1523_85%)] border border-white/5 flex items-center justify-center overflow-hidden relative">
+                      {thumbUrl ? (
+                        <img
+                          src={thumbUrl}
+                          alt={item.label}
+                          className="w-full h-full object-contain transition-transform duration-200 group-hover:scale-105"
+                          draggable={false}
+                        />
+                      ) : (
+                        <Box className="w-6 h-6 text-slate-500 animate-pulse" />
+                      )}
+                      <span className="absolute top-1.5 right-1.5 w-5 h-5 rounded-md bg-black/45 text-amber-400 flex items-center justify-center opacity-80 group-hover:opacity-100 group-hover:bg-amber-500 group-hover:text-slate-950 transition-colors">
+                        <Plus className="w-3 h-3" />
+                      </span>
                     </div>
-                    {item.sub && (
-                      <div className="text-[10px] text-slate-400 truncate">
-                        {item.sub}
+                    <div className="min-w-0 px-0.5 pb-0.5">
+                      <div className="text-[11px] font-semibold text-slate-100 truncate">
+                        {item.label}
                       </div>
-                    )}
-                  </div>
-                </button>
-              ))}
+                      <div className="text-[10px] text-slate-400 truncate capitalize">
+                        {item.sub || item.actorType}
+                      </div>
+                    </div>
+                  </button>
+                );
+              })}
               {libraryItems.length === 0 && (
                 <div className="col-span-2 text-center py-3 text-xs text-slate-500">
                   No matching models.
@@ -1224,16 +1292,29 @@ export function InspectorPanel({
                         (24 * 60 * 60 * 1000)
                     )
                   );
+                  const customThumb = thumbMap[getThumbnailKey('custom', bp.id, bp.id)];
                   return (
                     <div
                       key={bp.id}
-                      className="p-2 rounded-lg bg-[#171E2E] border border-white/8 flex items-center justify-between gap-2"
+                      className="p-2 rounded-xl bg-[#171E2E] border border-white/10 flex items-center justify-between gap-2.5"
                     >
-                      <div className="min-w-0">
-                        <div className="text-xs font-medium text-slate-100 truncate">
+                      <div className="w-14 h-14 shrink-0 rounded-lg bg-[radial-gradient(circle_at_50%_38%,#27344f_0%,#0f1523_85%)] border border-white/8 flex items-center justify-center overflow-hidden">
+                        {customThumb ? (
+                          <img
+                            src={customThumb}
+                            alt={bp.name}
+                            className="w-full h-full object-contain"
+                            draggable={false}
+                          />
+                        ) : (
+                          <Box className="w-5 h-5 text-slate-500 animate-pulse" />
+                        )}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="text-xs font-semibold text-slate-100 truncate">
                           {bp.name}
                         </div>
-                        <div className="text-[11px] text-slate-400 font-mono-tabular">
+                        <div className="text-[11px] text-slate-400 font-mono-tabular truncate">
                           {bp.category} · {bp.parts.length} parts · {daysLeft} days left
                         </div>
                       </div>
@@ -1243,14 +1324,14 @@ export function InspectorPanel({
                           onClick={() =>
                             onOpenLibraryPicker('custom', bp.id, bp.name, bp)
                           }
-                          className="px-2 py-1 rounded bg-amber-500 hover:bg-amber-400 text-slate-950 text-[11px] font-semibold cursor-pointer"
+                          className="px-2.5 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 text-[11px] font-semibold cursor-pointer"
                         >
                           Add
                         </button>
                         <button
                           type="button"
                           onClick={() => onDeleteCustomModel(bp.id)}
-                          className="p-1 rounded bg-white/5 hover:bg-rose-500/20 text-slate-400 hover:text-rose-300 cursor-pointer"
+                          className="p-1.5 rounded-lg bg-white/5 hover:bg-rose-500/20 text-slate-400 hover:text-rose-300 cursor-pointer"
                           title="Delete saved model"
                         >
                           <Trash2 className="w-3.5 h-3.5" />

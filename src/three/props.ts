@@ -8,9 +8,12 @@ import {
   VehicleKind,
 } from '../types/studio';
 import {
+  createBrickStoneTexture,
   createCartoonOutline,
   createContactShadowTexture,
+  createRoofTileTexture,
   createSpeechBubbleTexture,
+  createWoodPlankTexture,
   getSharedFabricTexture,
 } from './proceduralTextures';
 
@@ -519,64 +522,283 @@ export function createPropRig(kind: PropKind, accentColor: string): PropOrCustom
 
   switch (kind) {
     case 'tree': {
-      const trunk = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.16, 0.25, 1.3, 10),
-        new THREE.MeshStandardMaterial({ color: 0x7c4a2d, roughness: 0.9 })
-      );
-      trunk.position.y = 0.65;
+      const trunkMat = new THREE.MeshPhysicalMaterial({
+        color: 0x7c4a2d,
+        roughness: 0.88,
+        clearcoat: 0.06,
+      });
+      const trunkPts = [
+        new THREE.Vector2(0.36, 0.0),
+        new THREE.Vector2(0.28, 0.16),
+        new THREE.Vector2(0.21, 0.45),
+        new THREE.Vector2(0.18, 0.92),
+        new THREE.Vector2(0.14, 1.38),
+      ];
+      const trunk = new THREE.Mesh(new THREE.LatheGeometry(trunkPts, 18), trunkMat);
       bodyPivot.add(trunk);
-      const leafMat = new THREE.MeshStandardMaterial({ color: accentColor, roughness: 0.85 });
-      accentMeshes.push(
-        new THREE.Mesh(new THREE.SphereGeometry(0.82, 14, 12), leafMat),
-        new THREE.Mesh(new THREE.SphereGeometry(0.62, 14, 12), leafMat),
-        new THREE.Mesh(new THREE.SphereGeometry(0.6, 14, 12), leafMat)
-      );
-      accentMeshes[0].position.set(0, 1.65, 0);
-      accentMeshes[1].position.set(-0.42, 1.42, 0.2);
-      accentMeshes[2].position.set(0.42, 1.45, -0.18);
-      accentMeshes.forEach((m) => bodyPivot.add(m));
-      headHeight = 2.6;
-      ringRadius = 0.85;
+
+      // Curved organic branches & root flares
+      const branchCurveL = new THREE.CatmullRomCurve3([
+        new THREE.Vector3(-0.08, 0.92, 0.02),
+        new THREE.Vector3(-0.28, 1.18, 0.1),
+        new THREE.Vector3(-0.46, 1.38, 0.18),
+      ]);
+      const branchCurveR = new THREE.CatmullRomCurve3([
+        new THREE.Vector3(0.08, 0.96, -0.02),
+        new THREE.Vector3(0.26, 1.22, -0.1),
+        new THREE.Vector3(0.46, 1.42, -0.16),
+      ]);
+      const branchL = new THREE.Mesh(new THREE.TubeGeometry(branchCurveL, 10, 0.075, 10, false), trunkMat);
+      const branchR = new THREE.Mesh(new THREE.TubeGeometry(branchCurveR, 10, 0.072, 10, false), trunkMat);
+      bodyPivot.add(branchL, branchR);
+
+      const baseCol = new THREE.Color(accentColor);
+      const leafMat = new THREE.MeshPhysicalMaterial({
+        color: baseCol,
+        roughness: 0.72,
+        clearcoat: 0.16,
+      });
+      const leafBrightMat = new THREE.MeshPhysicalMaterial({
+        color: baseCol.clone().offsetHSL(0.02, 0.06, 0.1),
+        roughness: 0.68,
+        clearcoat: 0.18,
+      });
+      const leafDeepMat = new THREE.MeshPhysicalMaterial({
+        color: baseCol.clone().multiplyScalar(0.82),
+        roughness: 0.76,
+        clearcoat: 0.12,
+      });
+
+      const puffs: Array<[number, number, number, number, THREE.MeshPhysicalMaterial]> = [
+        [0, 1.72, 0, 0.84, leafMat],
+        [-0.48, 1.48, 0.24, 0.64, leafBrightMat],
+        [0.48, 1.52, -0.2, 0.62, leafBrightMat],
+        [0.04, 2.24, 0.08, 0.58, leafBrightMat],
+        [-0.18, 1.82, -0.38, 0.54, leafDeepMat],
+        [0.24, 1.44, 0.36, 0.52, leafMat],
+      ];
+      puffs.forEach(([px, py, pz, rad, mat]) => {
+        const puff = new THREE.Mesh(new THREE.SphereGeometry(rad, 20, 16), mat);
+        puff.scale.set(1.06, 0.92, 1.04);
+        puff.position.set(px, py, pz);
+        bodyPivot.add(puff);
+        accentMeshes.push(puff);
+      });
+      headHeight = 2.85;
+      ringRadius = 0.92;
       break;
     }
 
     case 'hut': {
-      const wallMat = new THREE.MeshStandardMaterial({ color: 0xfef3c7, roughness: 0.88 });
-      const thatchMat = new THREE.MeshStandardMaterial({ color: accentColor, roughness: 0.82 });
-      const woodMat = new THREE.MeshStandardMaterial({ color: 0x78350f, roughness: 0.75 });
-      const base = new THREE.Mesh(new THREE.CylinderGeometry(1.15, 1.2, 1.25, 16), wallMat);
-      base.position.y = 0.625;
-      const roof = new THREE.Mesh(new THREE.ConeGeometry(1.5, 1.15, 16), thatchMat);
-      roof.position.y = 1.8;
-      const door = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.82, 0.14), woodMat);
-      door.position.set(0, 0.41, 1.14);
-      bodyPivot.add(base, roof, door);
+      const wallMat = new THREE.MeshPhysicalMaterial({ color: 0xfef3c7, roughness: 0.84 });
+      const plinthMat = new THREE.MeshPhysicalMaterial({ color: 0x94a3b8, roughness: 0.86 });
+      const thatchMat = new THREE.MeshPhysicalMaterial({
+        map: createRoofTileTexture(4),
+        color: accentColor,
+        roughness: 0.72,
+        clearcoat: 0.14,
+      });
+      const woodMat = new THREE.MeshPhysicalMaterial({
+        map: createWoodPlankTexture(4),
+        color: 0x854d0e,
+        roughness: 0.72,
+      });
+      const glassMat = new THREE.MeshPhysicalMaterial({
+        color: 0xfef08a,
+        emissive: 0xfde047,
+        emissiveIntensity: 0.45,
+        roughness: 0.16,
+        clearcoat: 0.8,
+      });
+
+      const plinth = new THREE.Mesh(new THREE.CylinderGeometry(1.24, 1.3, 0.22, 24), plinthMat);
+      plinth.position.y = 0.11;
+      const basePts = [
+        new THREE.Vector2(1.2, 0.2),
+        new THREE.Vector2(1.22, 0.75),
+        new THREE.Vector2(1.16, 1.32),
+      ];
+      const base = new THREE.Mesh(new THREE.LatheGeometry(basePts, 24), wallMat);
+
+      // Flared concave thatched roof
+      const roofPts = [
+        new THREE.Vector2(1.66, 1.2),
+        new THREE.Vector2(1.42, 1.44),
+        new THREE.Vector2(0.95, 1.85),
+        new THREE.Vector2(0.45, 2.25),
+        new THREE.Vector2(0.08, 2.52),
+        new THREE.Vector2(0.0, 2.56),
+      ];
+      const roof = new THREE.Mesh(new THREE.LatheGeometry(roofPts, 26), thatchMat);
+      const topCap = new THREE.Mesh(new THREE.TorusGeometry(0.14, 0.05, 8, 16), woodMat);
+      topCap.rotation.x = Math.PI / 2;
+      topCap.position.y = 2.46;
+
+      // Arched doorway + frame + doorstep
+      const doorFrame = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.88, 0.16), woodMat);
+      doorFrame.position.set(0, 0.56, 1.15);
+      const doorArchFrame = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.31, 0.31, 0.16, 16),
+        woodMat
+      );
+      doorArchFrame.rotation.x = Math.PI / 2;
+      doorArchFrame.position.set(0, 0.98, 1.15);
+      const door = new THREE.Mesh(new THREE.BoxGeometry(0.48, 0.82, 0.18), woodMat);
+      door.position.set(0, 0.54, 1.17);
+      const knob = new THREE.Mesh(
+        new THREE.SphereGeometry(0.036, 12, 10),
+        new THREE.MeshPhysicalMaterial({ color: 0xfacc15, metalness: 0.85, roughness: 0.2 })
+      );
+      knob.position.set(0.14, 0.55, 1.27);
+      const step = new THREE.Mesh(new THREE.BoxGeometry(0.76, 0.1, 0.28), plinthMat);
+      step.position.set(0, 0.05, 1.32);
+
+      // Framed circular side window
+      const winGroup = new THREE.Group();
+      winGroup.position.set(0.94, 0.82, 0.72);
+      winGroup.rotation.y = Math.PI / 3.4;
+      const winRim = new THREE.Mesh(new THREE.TorusGeometry(0.22, 0.04, 10, 18), woodMat);
+      const winPane = new THREE.Mesh(new THREE.CircleGeometry(0.2, 16), glassMat);
+      winPane.position.z = 0.01;
+      const winSill = new THREE.Mesh(new THREE.BoxGeometry(0.52, 0.06, 0.14), woodMat);
+      winSill.position.set(0, -0.23, 0.04);
+      winGroup.add(winRim, winPane, winSill);
+
+      bodyPivot.add(plinth, base, roof, topCap, doorFrame, doorArchFrame, door, knob, step, winGroup);
       accentMeshes.push(roof);
-      headHeight = 2.5;
-      ringRadius = 1.45;
+      headHeight = 2.65;
+      ringRadius = 1.5;
       break;
     }
 
     case 'house': {
-      const wallMat = new THREE.MeshStandardMaterial({ color: accentColor, roughness: 0.65 });
-      const roofMat = new THREE.MeshStandardMaterial({ color: 0x334155, roughness: 0.45, metalness: 0.25 });
-      const glassMat = new THREE.MeshStandardMaterial({ color: 0x7dd3fc, emissive: 0x38bdf8, emissiveIntensity: 0.2, roughness: 0.15 });
-      const mainBox = new THREE.Mesh(new THREE.BoxGeometry(2.4, 1.65, 1.9), wallMat);
-      mainBox.position.y = 0.825;
-      const roofSlab = new THREE.Mesh(new THREE.BoxGeometry(2.6, 0.18, 2.1), roofMat);
-      roofSlab.position.y = 1.74;
-      const upperDeck = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.85, 1.3), wallMat);
-      upperDeck.position.set(-0.35, 2.25, -0.1);
-      const upperRoof = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.14, 1.5), roofMat);
-      upperRoof.position.set(-0.35, 2.75, -0.1);
-      const window1 = new THREE.Mesh(new THREE.BoxGeometry(0.85, 0.65, 0.08), glassMat);
-      window1.position.set(0.55, 0.95, 0.96);
-      const door = new THREE.Mesh(new THREE.BoxGeometry(0.5, 1.05, 0.08), roofMat);
-      door.position.set(-0.55, 0.525, 0.96);
-      bodyPivot.add(mainBox, roofSlab, upperDeck, upperRoof, window1, door);
+      const brickTex = createBrickStoneTexture(4);
+      const roofTex = createRoofTileTexture(4);
+      const woodTex = createWoodPlankTexture(4);
+      const wallMat = new THREE.MeshPhysicalMaterial({
+        map: brickTex,
+        color: accentColor,
+        roughness: 0.68,
+      });
+      const roofMat = new THREE.MeshPhysicalMaterial({
+        map: roofTex,
+        color: 0x334155,
+        roughness: 0.45,
+        metalness: 0.18,
+        clearcoat: 0.24,
+      });
+      const trimMat = new THREE.MeshPhysicalMaterial({
+        map: woodTex,
+        color: 0x78350f,
+        roughness: 0.68,
+      });
+      const sillMat = new THREE.MeshPhysicalMaterial({ color: 0xcbd5e1, roughness: 0.78 });
+      const glassMat = new THREE.MeshPhysicalMaterial({
+        color: 0x7dd3fc,
+        emissive: 0x38bdf8,
+        emissiveIntensity: 0.32,
+        roughness: 0.14,
+        clearcoat: 0.88,
+      });
+
+      const plinth = new THREE.Mesh(new THREE.BoxGeometry(2.54, 0.22, 2.04), sillMat);
+      plinth.position.y = 0.11;
+      const mainBox = new THREE.Mesh(new THREE.BoxGeometry(2.4, 1.62, 1.9), wallMat);
+      mainBox.position.y = 1.02;
+
+      // Flared curved gable roof over main house
+      const buildSwoopedRoof = (spanW: number, peakH: number, depthD: number) => {
+        const s = new THREE.Shape();
+        const hw = spanW * 0.5;
+        s.moveTo(-hw - 0.18, -0.06);
+        s.quadraticCurveTo(-hw * 0.55, peakH * 0.32, 0, peakH);
+        s.quadraticCurveTo(hw * 0.55, peakH * 0.32, hw + 0.18, -0.06);
+        s.lineTo(hw + 0.1, -0.18);
+        s.quadraticCurveTo(hw * 0.5, peakH * 0.2, 0, peakH - 0.14);
+        s.quadraticCurveTo(-hw * 0.5, peakH * 0.2, -hw - 0.1, -0.18);
+        s.closePath();
+        const geo = new THREE.ExtrudeGeometry(s, {
+          depth: depthD,
+          bevelEnabled: true,
+          bevelSegments: 2,
+          steps: 1,
+          bevelSize: 0.03,
+          bevelThickness: 0.03,
+        });
+        geo.translate(0, 0, -depthD * 0.5);
+        return geo;
+      };
+
+      const mainRoof = new THREE.Mesh(buildSwoopedRoof(2.68, 0.78, 2.15), roofMat);
+      mainRoof.position.y = 1.84;
+
+      const upperDeck = new THREE.Mesh(new THREE.BoxGeometry(1.36, 0.82, 1.3), wallMat);
+      upperDeck.position.set(-0.35, 2.38, -0.05);
+      const upperRoof = new THREE.Mesh(buildSwoopedRoof(1.56, 0.54, 1.48), roofMat);
+      upperRoof.position.set(-0.35, 2.78, -0.05);
+
+      const chimney = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.85, 0.32), sillMat);
+      chimney.position.set(0.75, 2.72, -0.45);
+      const chimneyCap = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.09, 0.4), roofMat);
+      chimneyCap.position.set(0.75, 3.16, -0.45);
+
+      // Framed 3D windows with sills, mullions & shutters
+      const addFramedWindow = (wx: number, wy: number, wz: number, w = 0.64, h = 0.58) => {
+        const frame = new THREE.Mesh(new THREE.BoxGeometry(w + 0.12, h + 0.12, 0.1), trimMat);
+        frame.position.set(wx, wy, wz);
+        const pane = new THREE.Mesh(new THREE.BoxGeometry(w, h, 0.12), glassMat);
+        pane.position.set(wx, wy, wz + 0.01);
+        const mullionV = new THREE.Mesh(new THREE.BoxGeometry(0.04, h, 0.14), trimMat);
+        mullionV.position.set(wx, wy, wz + 0.015);
+        const mullionH = new THREE.Mesh(new THREE.BoxGeometry(w, 0.04, 0.14), trimMat);
+        mullionH.position.set(wx, wy, wz + 0.015);
+        const sill = new THREE.Mesh(new THREE.BoxGeometry(w + 0.24, 0.08, 0.18), sillMat);
+        sill.position.set(wx, wy - h * 0.5 - 0.06, wz + 0.04);
+        const shutterL = new THREE.Mesh(new THREE.BoxGeometry(0.14, h + 0.04, 0.06), roofMat);
+        shutterL.position.set(wx - w * 0.5 - 0.14, wy, wz + 0.02);
+        const shutterR = new THREE.Mesh(new THREE.BoxGeometry(0.14, h + 0.04, 0.06), roofMat);
+        shutterR.position.set(wx + w * 0.5 + 0.14, wy, wz + 0.02);
+        bodyPivot.add(frame, pane, mullionV, mullionH, sill, shutterL, shutterR);
+      };
+      addFramedWindow(0.56, 1.08, 0.96, 0.66, 0.58);
+      addFramedWindow(-0.35, 2.42, 0.61, 0.52, 0.44);
+
+      // Arched wooden front door + brass knob + step
+      const doorFrame = new THREE.Mesh(new THREE.BoxGeometry(0.62, 1.06, 0.11), trimMat);
+      doorFrame.position.set(-0.55, 0.72, 0.96);
+      const doorArch = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.31, 0.31, 0.11, 16),
+        trimMat
+      );
+      doorArch.rotation.x = Math.PI / 2;
+      doorArch.position.set(-0.55, 1.24, 0.96);
+      const door = new THREE.Mesh(new THREE.BoxGeometry(0.48, 1.02, 0.13), trimMat);
+      door.position.set(-0.55, 0.71, 0.975);
+      const knob = new THREE.Mesh(
+        new THREE.SphereGeometry(0.036, 12, 10),
+        new THREE.MeshPhysicalMaterial({ color: 0xfacc15, metalness: 0.85, roughness: 0.2 })
+      );
+      knob.position.set(-0.4, 0.72, 1.05);
+      const porchStep = new THREE.Mesh(new THREE.BoxGeometry(0.76, 0.12, 0.32), sillMat);
+      porchStep.position.set(-0.55, 0.06, 1.12);
+
+      bodyPivot.add(
+        plinth,
+        mainBox,
+        mainRoof,
+        upperDeck,
+        upperRoof,
+        chimney,
+        chimneyCap,
+        doorFrame,
+        doorArch,
+        door,
+        knob,
+        porchStep
+      );
       accentMeshes.push(mainBox, upperDeck);
-      headHeight = 2.95;
-      ringRadius = 1.65;
+      headHeight = 3.25;
+      ringRadius = 1.68;
       break;
     }
 
@@ -1185,7 +1407,9 @@ export function disposePropOrCustomRig(rig: PropOrCustomRig): void {
     if ((obj as THREE.Mesh).isMesh || (obj as THREE.Sprite).isSprite) {
       const m = obj as THREE.Mesh;
       if (m.userData?.isOutline) return;
-      if (m.geometry && !m.userData?.sharedResource) m.geometry.dispose();
+      if (m.geometry && !m.geometry.userData?.sharedResource && !m.userData?.sharedResource) {
+        m.geometry.dispose();
+      }
       if (Array.isArray(m.material)) {
         m.material.forEach((mt) => {
           if (mt.userData?.sharedResource) return;
