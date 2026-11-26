@@ -37,6 +37,8 @@ export interface CharacterRig {
   rightHandMount: THREE.Group;
   leftLegPivot: THREE.Group;
   rightLegPivot: THREE.Group;
+  leftKneePivot?: THREE.Group;
+  rightKneePivot?: THREE.Group;
   leftWingPivot?: THREE.Group;
   rightWingPivot?: THREE.Group;
   ponytailPivot?: THREE.Group;
@@ -62,30 +64,11 @@ function getShadowTex(): THREE.CanvasTexture {
   return sharedShadowTex;
 }
 
-function makeRoundedBox(w: number, h: number, d: number, r = 0.05): THREE.BufferGeometry {
-  const shape = new THREE.Shape();
-  const hw = Math.max(0.01, w / 2 - r);
-  const hh = Math.max(0.01, h / 2 - r);
-  shape.moveTo(-hw, -hh - r);
-  shape.lineTo(hw, -hh - r);
-  shape.quadraticCurveTo(hw + r, -hh - r, hw + r, -hh);
-  shape.lineTo(hw + r, hh);
-  shape.quadraticCurveTo(hw + r, hh + r, hw, hh + r);
-  shape.lineTo(-hw, hh + r);
-  shape.quadraticCurveTo(-hw - r, hh + r, -hw - r, hh);
-  shape.lineTo(-hw - r, -hh);
-  shape.quadraticCurveTo(-hw - r, -hh - r, -hw, -hh - r);
-
-  const geo = new THREE.ExtrudeGeometry(shape, {
-    depth: Math.max(0.02, d - r * 2),
-    bevelEnabled: true,
-    bevelSegments: 6,
-    curveSegments: 12,
-    steps: 1,
-    bevelSize: r,
-    bevelThickness: r,
-  });
-  geo.center();
+// Smooth rounded organic pillow/pouch geometry (zero BoxGeometry)
+function makeOrganicPouchGeo(w: number, h: number, d: number, radialSegs = 28): THREE.BufferGeometry {
+  const geo = new THREE.SphereGeometry(0.5, radialSegs, 22);
+  geo.scale(w, h, d);
+  geo.computeVertexNormals();
   return geo;
 }
 
@@ -93,7 +76,7 @@ function makeRoundedBox(w: number, h: number, d: number, r = 0.05): THREE.Buffer
 let cachedChibiHeadGeo: THREE.BufferGeometry | null = null;
 function getChibiHeadGeometry(): THREE.BufferGeometry {
   if (cachedChibiHeadGeo) return cachedChibiHeadGeo;
-  const geo = new THREE.SphereGeometry(0.55, 44, 34);
+  const geo = new THREE.SphereGeometry(0.55, 48, 36);
   const pos = geo.attributes.position;
   for (let i = 0; i < pos.count; i++) {
     let x = pos.getX(i); // front (+X) to back (-X)
@@ -103,12 +86,12 @@ function getChibiHeadGeometry(): THREE.BufferGeometry {
     // Gentle chibi cheek wideness below eye line & soft rounded jaw/chin
     if (y < 0.08 && y > -0.45) {
       const cheekWeight = Math.sin(((0.08 - y) / 0.53) * Math.PI);
-      z *= 1 + cheekWeight * 0.095;
-      if (x > 0) x *= 1 + cheekWeight * 0.035;
+      z *= 1 + cheekWeight * 0.105;
+      if (x > 0) x *= 1 + cheekWeight * 0.038;
     }
     if (y < -0.28) {
       const chinT = Math.min(1, (-0.28 - y) / 0.27);
-      y += chinT * 0.038;
+      y += chinT * 0.04;
     }
 
     // Subtle recessed eye-socket hollows on front (+X) so 3D eyeballs sit naturally framed
@@ -116,9 +99,9 @@ function getChibiHeadGeometry(): THREE.BufferGeometry {
       const dy = y - 0.055;
       const dz = Math.abs(z) - 0.185;
       const socketDistSq = dy * dy + dz * dz;
-      if (socketDistSq < 0.026) {
-        const falloff = 1 - socketDistSq / 0.026;
-        x -= falloff * falloff * 0.042;
+      if (socketDistSq < 0.028) {
+        const falloff = 1 - socketDistSq / 0.028;
+        x -= falloff * falloff * 0.046;
       }
     }
 
@@ -131,40 +114,18 @@ function getChibiHeadGeometry(): THREE.BufferGeometry {
   return geo;
 }
 
-// Smooth tapered LatheGeometry limb starting at y=0 (joint center) down to y=-length
-function makeTaperedLimbGeo(
-  topR: number,
-  midR: number,
-  botR: number,
-  length: number,
-  radialSegments = 20
-): THREE.BufferGeometry {
-  const pts: THREE.Vector2[] = [
-    new THREE.Vector2(0, -length - botR * 0.45),
-    new THREE.Vector2(botR * 0.72, -length - botR * 0.3),
-    new THREE.Vector2(botR, -length),
-    new THREE.Vector2(midR, -length * 0.52),
-    new THREE.Vector2(topR, -length * 0.14),
-    new THREE.Vector2(topR * 0.85, topR * 0.28),
-    new THREE.Vector2(0, topR * 0.52),
-  ];
-  const geo = new THREE.LatheGeometry(pts, radialSegments);
-  geo.computeVertexNormals();
-  return geo;
-}
-
-// Tapered cartoon torso silhouette (rounded shoulders, slight waist taper, soft hips)
+// Smooth tapered LatheGeometry torso silhouette (rounded chest, contoured waist, soft hips)
 function makeTaperedTorsoGeo(
   width: number,
   height: number,
   depth: number,
-  radialSegments = 28
+  radialSegments = 36
 ): THREE.BufferGeometry {
   const pts: THREE.Vector2[] = [
     new THREE.Vector2(0, 0),
     new THREE.Vector2(0.86, 0.05 * height),
     new THREE.Vector2(0.95, 0.22 * height),
-    new THREE.Vector2(0.92, 0.48 * height),
+    new THREE.Vector2(0.91, 0.48 * height),
     new THREE.Vector2(1.0, 0.78 * height),
     new THREE.Vector2(0.82, 0.94 * height),
     new THREE.Vector2(0.45, 0.99 * height),
@@ -172,6 +133,83 @@ function makeTaperedTorsoGeo(
   ];
   const geo = new THREE.LatheGeometry(pts, radialSegments);
   geo.scale(width * 0.5, 1, depth * 0.5);
+  geo.computeVertexNormals();
+  return geo;
+}
+
+// Smooth LatheGeometry pelvis/hip silhouette (36 radial segments)
+function makeSculptedPelvisGeo(width: number, height: number, depth: number): THREE.BufferGeometry {
+  const pts: THREE.Vector2[] = [
+    new THREE.Vector2(0, -height * 0.5),
+    new THREE.Vector2(0.75, -height * 0.42),
+    new THREE.Vector2(0.98, -height * 0.12),
+    new THREE.Vector2(1.0, height * 0.16),
+    new THREE.Vector2(0.92, height * 0.46),
+    new THREE.Vector2(0, height * 0.5),
+  ];
+  const geo = new THREE.LatheGeometry(pts, 36);
+  geo.scale(width * 0.5, 1, depth * 0.5);
+  geo.computeVertexNormals();
+  return geo;
+}
+
+// Smooth LatheGeometry pleated skirt / flared ballgown with subtle scalloped hem
+function makePleatedSkirtGeo(
+  topR: number,
+  botR: number,
+  height: number,
+  radialSegments = 42,
+  pleatAmp = 0.045
+): THREE.BufferGeometry {
+  const geo = new THREE.CylinderGeometry(topR, botR, height, radialSegments, 6, false);
+  const pos = geo.attributes.position;
+  for (let i = 0; i < pos.count; i++) {
+    const x = pos.getX(i);
+    const y = pos.getY(i);
+    const z = pos.getZ(i);
+    const r = Math.hypot(x, z);
+    if (r > 0.001) {
+      const t = Math.max(0, Math.min(1, (height * 0.5 - y) / height)); // 0 top, 1 hem
+      const angle = Math.atan2(z, x);
+      const flare = 1 + t * t * 0.14 + Math.sin(angle * 10) * pleatAmp * t;
+      pos.setXYZ(i, x * flare, y, z * flare);
+    }
+  }
+  pos.needsUpdate = true;
+  geo.computeVertexNormals();
+  return geo;
+}
+
+// Flowing curved cape via beveled ExtrudeGeometry curving softly outward behind the back
+function makeDrapedCapeGeo(width: number, length: number): THREE.BufferGeometry {
+  const shape = new THREE.Shape();
+  shape.moveTo(-width * 0.34, 0);
+  shape.lineTo(width * 0.34, 0);
+  shape.quadraticCurveTo(width * 0.48, -length * 0.48, width * 0.56, -length);
+  shape.quadraticCurveTo(width * 0.28, -length * 1.06, 0, -length * 0.98);
+  shape.quadraticCurveTo(-width * 0.28, -length * 1.06, -width * 0.56, -length);
+  shape.quadraticCurveTo(-width * 0.48, -length * 0.48, -width * 0.34, 0);
+
+  const geo = new THREE.ExtrudeGeometry(shape, {
+    depth: 0.028,
+    bevelEnabled: true,
+    bevelSegments: 4,
+    curveSegments: 18,
+    steps: 4,
+    bevelSize: 0.012,
+    bevelThickness: 0.012,
+  });
+  // Curve cape backward along -Z as it drapes down
+  const pos = geo.attributes.position;
+  for (let i = 0; i < pos.count; i++) {
+    const x = pos.getX(i);
+    const y = pos.getY(i);
+    const z = pos.getZ(i);
+    const fall = Math.max(0, -y / length);
+    const billow = -fall * fall * (width * 0.28) - Math.cos((x / (width * 0.56)) * Math.PI * 0.5) * 0.03;
+    pos.setXYZ(i, x, y, z + billow);
+  }
+  pos.needsUpdate = true;
   geo.computeVertexNormals();
   return geo;
 }
@@ -188,19 +226,18 @@ function makeCurvedCapVisorGeo(width: number, length: number, thickness: number)
   const geo = new THREE.ExtrudeGeometry(shape, {
     depth: thickness,
     bevelEnabled: true,
-    bevelSegments: 3,
-    curveSegments: 16,
+    bevelSegments: 4,
+    curveSegments: 18,
     bevelSize: thickness * 0.35,
     bevelThickness: thickness * 0.35,
   });
   geo.rotateX(Math.PI / 2);
-  // Subtle natural downward visor curve at outer edges
   const pos = geo.attributes.position;
   for (let i = 0; i < pos.count; i++) {
     const vx = pos.getX(i);
     const vy = pos.getY(i);
     const vz = pos.getZ(i);
-    const curveDrop = (vx * vx) / (width * width * 0.38) * (thickness * 2.2) + vz * 0.08;
+    const curveDrop = ((vx * vx) / (width * width * 0.38)) * (thickness * 2.2) + vz * 0.08;
     pos.setY(i, vy - curveDrop);
   }
   pos.needsUpdate = true;
@@ -208,7 +245,64 @@ function makeCurvedCapVisorGeo(width: number, length: number, thickness: number)
   return geo;
 }
 
-// Puffy sculpted Chibi-Pixar cartoon sneaker
+// Sculpted Butterfly (Fairy) or Feathered (Angel) wing geometry via beveled ExtrudeGeometry
+function makeSculptedWingGeo(isFairy: boolean, scaleFactor: number): THREE.BufferGeometry {
+  const s = new THREE.Shape();
+  if (isFairy) {
+    // Graceful upper + lower butterfly wing silhouette
+    s.moveTo(0, 0);
+    s.bezierCurveTo(0.14 * scaleFactor, 0.26 * scaleFactor, 0.46 * scaleFactor, 0.34 * scaleFactor, 0.48 * scaleFactor, 0.14 * scaleFactor);
+    s.bezierCurveTo(0.46 * scaleFactor, -0.02 * scaleFactor, 0.3 * scaleFactor, -0.04 * scaleFactor, 0.22 * scaleFactor, -0.06 * scaleFactor);
+    s.bezierCurveTo(0.36 * scaleFactor, -0.14 * scaleFactor, 0.34 * scaleFactor, -0.34 * scaleFactor, 0.16 * scaleFactor, -0.32 * scaleFactor);
+    s.bezierCurveTo(0.06 * scaleFactor, -0.28 * scaleFactor, 0.02 * scaleFactor, -0.14 * scaleFactor, 0, 0);
+  } else {
+    // Layered feathered angel wing silhouette
+    s.moveTo(0, 0.04 * scaleFactor);
+    s.bezierCurveTo(0.14 * scaleFactor, 0.3 * scaleFactor, 0.44 * scaleFactor, 0.32 * scaleFactor, 0.5 * scaleFactor, 0.12 * scaleFactor);
+    s.quadraticCurveTo(0.42 * scaleFactor, 0.04 * scaleFactor, 0.44 * scaleFactor, -0.04 * scaleFactor);
+    s.quadraticCurveTo(0.34 * scaleFactor, -0.08 * scaleFactor, 0.36 * scaleFactor, -0.16 * scaleFactor);
+    s.quadraticCurveTo(0.24 * scaleFactor, -0.18 * scaleFactor, 0.24 * scaleFactor, -0.26 * scaleFactor);
+    s.bezierCurveTo(0.12 * scaleFactor, -0.26 * scaleFactor, 0.04 * scaleFactor, -0.14 * scaleFactor, 0, -0.04 * scaleFactor);
+    s.closePath();
+  }
+
+  const geo = new THREE.ExtrudeGeometry(s, {
+    depth: 0.014 * scaleFactor,
+    bevelEnabled: true,
+    bevelSegments: 3,
+    curveSegments: 18,
+    bevelSize: 0.008 * scaleFactor,
+    bevelThickness: 0.008 * scaleFactor,
+  });
+  geo.computeVertexNormals();
+  return geo;
+}
+
+// Curved sneaker footprint sole shape via beveled ExtrudeGeometry + TubeGeometry laces (zero BoxGeometry)
+function makeShoeSoleGeo(width: number, length: number, height: number): THREE.BufferGeometry {
+  const s = new THREE.Shape();
+  const hw = width * 0.5;
+  const hl = length * 0.5;
+  s.moveTo(-hw * 0.78, -hl);
+  s.quadraticCurveTo(0, -hl * 1.12, hw * 0.78, -hl);
+  s.bezierCurveTo(hw * 0.92, -hl * 0.3, hw * 1.06, hl * 0.35, hw * 0.85, hl * 0.88);
+  s.quadraticCurveTo(0, hl * 1.14, -hw * 0.85, hl * 0.88);
+  s.bezierCurveTo(-hw * 1.06, hl * 0.35, -hw * 0.92, -hl * 0.3, -hw * 0.78, -hl);
+
+  const geo = new THREE.ExtrudeGeometry(s, {
+    depth: height,
+    bevelEnabled: true,
+    bevelSegments: 4,
+    curveSegments: 18,
+    bevelSize: height * 0.38,
+    bevelThickness: height * 0.38,
+  });
+  geo.rotateX(Math.PI / 2);
+  geo.computeVertexNormals();
+  return geo;
+}
+
+// Puffy sculpted Chibi-Pixar 3D cartoon sneaker with contoured sole, puffed vamp & 3D laces
 function buildCartoonSneaker(
   scaleFactor: number,
   upperMat: THREE.Material,
@@ -219,46 +313,63 @@ function buildCartoonSneaker(
   const shoe = new THREE.Group();
 
   const sole = new THREE.Mesh(
-    makeRoundedBox(0.175 * scaleFactor, 0.044 * scaleFactor, 0.275 * scaleFactor, 0.018 * scaleFactor),
+    makeShoeSoleGeo(0.165 * scaleFactor, 0.255 * scaleFactor, 0.028 * scaleFactor),
     soleMat
   );
-  sole.position.set(0, 0.022 * scaleFactor, 0.045 * scaleFactor);
+  sole.position.set(0, 0.036 * scaleFactor, 0.042 * scaleFactor);
   addOutlineFn(sole, 1.03);
 
   const upper = new THREE.Mesh(
-    makeRoundedBox(0.156 * scaleFactor, 0.086 * scaleFactor, 0.225 * scaleFactor, 0.036 * scaleFactor),
+    new THREE.SphereGeometry(0.088 * scaleFactor, 28, 20),
     upperMat
   );
-  upper.position.set(0, 0.072 * scaleFactor, 0.032 * scaleFactor);
+  upper.scale.set(0.9, 0.62, 1.38);
+  upper.position.set(0, 0.072 * scaleFactor, 0.036 * scaleFactor);
   addOutlineFn(upper, 1.03);
 
   const toeCap = new THREE.Mesh(
-    new THREE.SphereGeometry(0.078 * scaleFactor, 20, 16),
+    new THREE.SphereGeometry(0.074 * scaleFactor, 24, 18),
     soleMat
   );
-  toeCap.scale.set(1.02, 0.72, 1.15);
-  toeCap.position.set(0, 0.056 * scaleFactor, 0.125 * scaleFactor);
+  toeCap.scale.set(1.02, 0.66, 1.14);
+  toeCap.position.set(0, 0.056 * scaleFactor, 0.128 * scaleFactor);
   addOutlineFn(toeCap, 1.03);
 
   const cuff = new THREE.Mesh(
-    new THREE.TorusGeometry(0.068 * scaleFactor, 0.022 * scaleFactor, 12, 24),
+    new THREE.TorusGeometry(0.068 * scaleFactor, 0.022 * scaleFactor, 16, 32),
     accentMat
   );
   cuff.rotation.x = Math.PI / 2;
-  cuff.position.set(0, 0.112 * scaleFactor, -0.01 * scaleFactor);
+  cuff.position.set(0, 0.114 * scaleFactor, -0.012 * scaleFactor);
 
   const tongue = new THREE.Mesh(
-    makeRoundedBox(0.082 * scaleFactor, 0.06 * scaleFactor, 0.03 * scaleFactor, 0.012 * scaleFactor),
+    new THREE.SphereGeometry(0.046 * scaleFactor, 20, 16),
     accentMat
   );
-  tongue.position.set(0, 0.11 * scaleFactor, 0.068 * scaleFactor);
-  tongue.rotation.x = -0.35;
+  tongue.scale.set(1.0, 0.92, 0.42);
+  tongue.position.set(0, 0.112 * scaleFactor, 0.064 * scaleFactor);
+  tongue.rotation.x = -0.45;
 
   shoe.add(sole, upper, toeCap, cuff, tongue);
+
+  // Two sculpted 3D laces across the vamp
+  [0.08, 0.11].forEach((lz, idx) => {
+    const laceCurve = new THREE.CatmullRomCurve3([
+      new THREE.Vector3(-0.046 * scaleFactor, (0.104 - idx * 0.01) * scaleFactor, lz * scaleFactor),
+      new THREE.Vector3(0, (0.116 - idx * 0.01) * scaleFactor, (lz + 0.01) * scaleFactor),
+      new THREE.Vector3(0.046 * scaleFactor, (0.104 - idx * 0.01) * scaleFactor, lz * scaleFactor),
+    ]);
+    const lace = new THREE.Mesh(
+      new THREE.TubeGeometry(laceCurve, 12, 0.008 * scaleFactor, 10, false),
+      soleMat
+    );
+    shoe.add(lace);
+  });
+
   return shoe;
 }
 
-// Articulated cartoon hand (rounded palm + angled thumb + curved 4-finger cluster)
+// Articulated cartoon hand (rounded palm + angled opposable thumb + 4 curved curled fingers)
 function buildCartoonHand(
   side: -1 | 1,
   scaleFactor: number,
@@ -270,19 +381,19 @@ function buildCartoonHand(
   const handGroup = new THREE.Group();
 
   const palm = new THREE.Mesh(
-    new THREE.SphereGeometry(0.054 * scaleFactor, 20, 16),
+    new THREE.SphereGeometry(0.055 * scaleFactor, 24, 18),
     handMat
   );
-  palm.scale.set(0.95, 1.04, 0.68);
+  palm.scale.set(0.96, 1.04, 0.68);
   addOutlineFn(palm, 1.032);
   handGroup.add(palm);
 
   // Opposable angled thumb
   const thumbPivot = new THREE.Group();
   thumbPivot.position.set(-side * 0.044 * scaleFactor, 0.008 * scaleFactor, 0.026 * scaleFactor);
-  thumbPivot.rotation.set(0.35, side * -0.4, side * -0.58);
+  thumbPivot.rotation.set(0.38, side * -0.42, side * -0.6);
   const thumb = new THREE.Mesh(
-    new THREE.CapsuleGeometry(0.016 * scaleFactor, 0.026 * scaleFactor, 8, 12),
+    new THREE.CapsuleGeometry(0.016 * scaleFactor, 0.028 * scaleFactor, 10, 16),
     handMat
   );
   thumb.position.y = -0.016 * scaleFactor;
@@ -292,20 +403,20 @@ function buildCartoonHand(
 
   // Curved 4-finger cluster so held items nestle naturally inside the grip
   [-0.028, -0.009, 0.01, 0.028].forEach((fx, idx) => {
-    const fLen = (idx === 1 || idx === 2 ? 0.03 : 0.024) * scaleFactor;
+    const fLen = (idx === 1 || idx === 2 ? 0.032 : 0.025) * scaleFactor;
     const finger = new THREE.Mesh(
-      new THREE.CapsuleGeometry(0.013 * scaleFactor, fLen, 8, 12),
+      new THREE.CapsuleGeometry(0.013 * scaleFactor, fLen, 10, 16),
       handMat
     );
-    finger.position.set(fx * scaleFactor, -0.048 * scaleFactor, 0.016 * scaleFactor);
-    finger.rotation.x = 0.42;
+    finger.position.set(fx * scaleFactor, -0.049 * scaleFactor, 0.018 * scaleFactor);
+    finger.rotation.x = 0.45;
     addOutlineFn(finger, 1.04);
     handGroup.add(finger);
   });
 
   if (hasGloves) {
     const cuff = new THREE.Mesh(
-      new THREE.TorusGeometry(0.054 * scaleFactor, 0.017 * scaleFactor, 12, 24),
+      new THREE.TorusGeometry(0.054 * scaleFactor, 0.017 * scaleFactor, 14, 28),
       gloveCuffMat
     );
     cuff.rotation.x = Math.PI / 2;
@@ -643,7 +754,7 @@ function createHumanoidCharacter(
     metalness: 0.02,
   });
 
-  const scaleFactor = isYoungKid ? 0.88 : isAdult ? 1.12 : 0.98;
+  const scaleFactor = isYoungKid ? 0.85 : isAdult ? 1.12 : 0.98;
   const legLen = 0.56 * scaleFactor;
   const torsoH = 0.55 * scaleFactor;
   const baseBodyY = legLen;
@@ -652,9 +763,9 @@ function createHumanoidCharacter(
   bodyPivot.position.y = baseBodyY;
   root.add(bodyPivot);
 
-  // Pelvis + Waist Belt
+  // Smooth Sculpted Pelvis + Contoured Torus Waist Belt
   const pelvis = new THREE.Mesh(
-    makeRoundedBox(0.39 * scaleFactor, 0.15 * scaleFactor, 0.27 * scaleFactor, 0.065),
+    makeSculptedPelvisGeo(0.41 * scaleFactor, 0.16 * scaleFactor, 0.28 * scaleFactor),
     pantsMat
   );
   pelvis.position.y = 0.04 * scaleFactor;
@@ -662,25 +773,27 @@ function createHumanoidCharacter(
   bodyPivot.add(pelvis);
 
   const belt = new THREE.Mesh(
-    makeRoundedBox(0.405 * scaleFactor, 0.052 * scaleFactor, 0.28 * scaleFactor, 0.022),
+    new THREE.TorusGeometry(0.178 * scaleFactor, 0.028 * scaleFactor, 16, 36),
     darkMat
   );
+  belt.rotation.x = Math.PI / 2;
+  belt.scale.set(1.12, 0.8, 1);
   belt.position.y = 0.095 * scaleFactor;
   const beltBuckle = new THREE.Mesh(
-    makeRoundedBox(0.082 * scaleFactor, 0.056 * scaleFactor, 0.036 * scaleFactor, 0.012),
-    new THREE.MeshPhysicalMaterial({ color: 0xfacc15, metalness: 0.78, roughness: 0.22, clearcoat: 0.6 })
+    new THREE.TorusGeometry(0.032 * scaleFactor, 0.011 * scaleFactor, 12, 24),
+    new THREE.MeshPhysicalMaterial({ color: 0xfacc15, metalness: 0.82, roughness: 0.18, clearcoat: 0.7 })
   );
-  beltBuckle.position.set(0, 0.095 * scaleFactor, 0.136 * scaleFactor);
+  beltBuckle.position.set(0, 0.095 * scaleFactor, 0.155 * scaleFactor);
   bodyPivot.add(belt, beltBuckle);
 
-  // Torso material override for Doctor / Chef / Angel
+  // Torso material override for Doctor / Chef / Angel (soft fabric roughness: 0.75)
   const torsoMat =
     kind === 'doctor' || kind === 'chef' || kind === 'angel'
-      ? new THREE.MeshPhysicalMaterial({ color: 0xf8fafc, map: fabricTex, roughness: 0.72, sheen: 0.3 })
+      ? new THREE.MeshPhysicalMaterial({ color: 0xf8fafc, map: fabricTex, roughness: 0.75, sheen: 0.32 })
       : shirtMat;
 
   const torso = new THREE.Mesh(
-    makeTaperedTorsoGeo(0.45 * scaleFactor, torsoH, 0.3 * scaleFactor, 28),
+    makeTaperedTorsoGeo(0.45 * scaleFactor, torsoH, 0.3 * scaleFactor, 36),
     torsoMat
   );
   torso.position.y = 0.075 * scaleFactor;
@@ -690,24 +803,33 @@ function createHumanoidCharacter(
     accentMeshes.push(torso);
   }
 
-  // Collar neck trim on tees
-  const collarTrim = new THREE.Mesh(
-    new THREE.TorusGeometry(0.112 * scaleFactor, 0.022 * scaleFactor, 16, 32),
-    torsoMat
-  );
-  collarTrim.rotation.x = Math.PI / 2;
-  collarTrim.position.set(0, 0.08 * scaleFactor + torsoH, 0.01);
-  bodyPivot.add(collarTrim);
+  // Collar neck trim on tees / folded shirt collar on collared presets
+  if (['teacher', 'father', 'police', 'doctor'].includes(kind)) {
+    const collarGeo = new THREE.TorusGeometry(0.118 * scaleFactor, 0.025 * scaleFactor, 16, 36);
+    const collar = new THREE.Mesh(collarGeo, kind === 'doctor' ? torsoMat : whiteMat);
+    collar.rotation.x = Math.PI / 2.2;
+    collar.position.set(0, 0.078 * scaleFactor + torsoH, 0.015 * scaleFactor);
+    bodyPivot.add(collar);
+  } else {
+    const collarTrim = new THREE.Mesh(
+      new THREE.TorusGeometry(0.112 * scaleFactor, 0.022 * scaleFactor, 16, 36),
+      torsoMat
+    );
+    collarTrim.rotation.x = Math.PI / 2;
+    collarTrim.position.set(0, 0.08 * scaleFactor + torsoH, 0.01);
+    bodyPivot.add(collarTrim);
+  }
 
-  // Skirt / Gown / Robe
+  // Pleated Skirt / Flowing Dress / Gown / Robe (42-segment scalloped Lathe)
   if (hasSkirtOrGown || kind === 'wizard') {
-    const isLongGown = ['queen', 'princess', 'witch', 'wizard'].includes(kind);
+    const isLongGown = ['queen', 'princess', 'witch', 'wizard', 'mother'].includes(kind);
     const skirt = new THREE.Mesh(
-      new THREE.CylinderGeometry(
+      makePleatedSkirtGeo(
         0.215 * scaleFactor,
-        (isLongGown ? 0.37 : 0.32) * scaleFactor,
+        (isLongGown ? 0.36 : 0.31) * scaleFactor,
         (isLongGown ? 0.48 : 0.28) * scaleFactor,
-        36
+        42,
+        isLongGown ? 0.05 : 0.04
       ),
       shirtMat
     );
@@ -717,66 +839,146 @@ function createHumanoidCharacter(
     accentMeshes.push(skirt);
   }
 
-  // Role-specific outfit details
-  if (kind === 'teacher' || kind === 'father') {
-    const tieGeo = new THREE.ConeGeometry(0.05 * scaleFactor, 0.32 * scaleFactor, 4);
-    tieGeo.rotateX(Math.PI);
-    const tie = new THREE.Mesh(
-      tieGeo,
-      new THREE.MeshPhysicalMaterial({ color: 0xdc2626, map: fabricTex, roughness: 0.55 })
-    );
-    tie.position.set(0, 0.36 * scaleFactor, 0.14 * scaleFactor);
-    bodyPivot.add(tie);
-  } else if (kind === 'farmer') {
-    const bib = new THREE.Mesh(
-      makeRoundedBox(0.28 * scaleFactor, 0.32 * scaleFactor, 0.06 * scaleFactor, 0.02),
-      pantsMat
-    );
-    bib.position.set(0, 0.28 * scaleFactor, 0.12 * scaleFactor);
-    const bandana = new THREE.Mesh(
-      new THREE.TorusGeometry(0.14 * scaleFactor, 0.032 * scaleFactor, 8, 16),
-      new THREE.MeshPhysicalMaterial({ color: 0xef4444, map: fabricTex, roughness: 0.65 })
-    );
-    bandana.rotation.x = Math.PI / 2.2;
-    bandana.position.set(0, 0.1 * scaleFactor + torsoH, 0.02);
-    bodyPivot.add(bib, bandana);
-  } else if (kind === 'doctor') {
-    const scrub = new THREE.Mesh(
-      makeRoundedBox(0.18 * scaleFactor, 0.3 * scaleFactor, 0.06 * scaleFactor, 0.02),
+  // Role-specific sculpted 3D outfit accessories
+  if (kind === 'teenager') {
+    // Cozy sculpted hoodie cowl behind neck + drawstring cords + rounded kangaroo pocket
+    const hoodCowl = new THREE.Mesh(
+      new THREE.TorusGeometry(0.145 * scaleFactor, 0.046 * scaleFactor, 16, 32, Math.PI * 1.45),
       shirtMat
     );
-    scrub.position.set(0, 0.44 * scaleFactor, 0.12 * scaleFactor);
-    const stethMat = new THREE.MeshPhysicalMaterial({ color: 0x1e293b, roughness: 0.3, metalness: 0.65, clearcoat: 0.5 });
-    const stethRing = new THREE.Mesh(new THREE.TorusGeometry(0.15 * scaleFactor, 0.022, 8, 18), stethMat);
-    stethRing.rotation.x = Math.PI / 2.6;
-    stethRing.position.set(0, 0.56 * scaleFactor, 0.05);
+    hoodCowl.rotation.set(Math.PI / 2.3, 0, -Math.PI * 0.22);
+    hoodCowl.position.set(0, 0.075 * scaleFactor + torsoH, -0.045 * scaleFactor);
+    bodyPivot.add(hoodCowl);
+    [-0.04, 0.04].forEach((cx) => {
+      const cord = new THREE.Mesh(
+        new THREE.CapsuleGeometry(0.008 * scaleFactor, 0.14 * scaleFactor, 8, 12),
+        whiteMat
+      );
+      cord.position.set(cx * scaleFactor, 0.45 * scaleFactor, 0.142 * scaleFactor);
+      bodyPivot.add(cord);
+    });
+    const pouch = new THREE.Mesh(
+      makeOrganicPouchGeo(0.24 * scaleFactor, 0.13 * scaleFactor, 0.07 * scaleFactor),
+      shirtMat
+    );
+    pouch.position.set(0, 0.21 * scaleFactor, 0.132 * scaleFactor);
+    bodyPivot.add(pouch);
+    accentMeshes.push(hoodCowl, pouch);
+  } else if (kind === 'woman' || kind === 'mother') {
+    // Decorative necklace / flowing draped saree pallu scarf across shoulder
+    const necklace = new THREE.Mesh(
+      new THREE.TorusGeometry(0.128 * scaleFactor, 0.015 * scaleFactor, 14, 32),
+      new THREE.MeshPhysicalMaterial({ color: 0xfef08a, metalness: 0.78, roughness: 0.2 })
+    );
+    necklace.rotation.x = Math.PI / 2.1;
+    necklace.position.set(0, 0.065 * scaleFactor + torsoH, 0.018 * scaleFactor);
+    bodyPivot.add(necklace);
+
+    if (kind === 'mother') {
+      const palluCurve = new THREE.CatmullRomCurve3([
+        new THREE.Vector3(0.17 * scaleFactor, 0.16 * scaleFactor, 0.11 * scaleFactor),
+        new THREE.Vector3(0.02 * scaleFactor, 0.36 * scaleFactor, 0.155 * scaleFactor),
+        new THREE.Vector3(-0.15 * scaleFactor, 0.56 * scaleFactor, 0.07 * scaleFactor),
+        new THREE.Vector3(-0.16 * scaleFactor, 0.5 * scaleFactor, -0.14 * scaleFactor),
+        new THREE.Vector3(-0.12 * scaleFactor, 0.2 * scaleFactor, -0.18 * scaleFactor),
+      ]);
+      const pallu = new THREE.Mesh(
+        new THREE.TubeGeometry(palluCurve, 22, 0.048 * scaleFactor, 16, false),
+        new THREE.MeshPhysicalMaterial({ color: 0xfef08a, map: fabricTex, roughness: 0.72, sheen: 0.4 })
+      );
+      pallu.scale.set(1.25, 1, 0.52);
+      addOutline(pallu, 1.03);
+      bodyPivot.add(pallu);
+    }
+  } else if (kind === 'teacher' || kind === 'father') {
+    const tieCurve = new THREE.CatmullRomCurve3([
+      new THREE.Vector3(0, 0.56 * scaleFactor, 0.125 * scaleFactor),
+      new THREE.Vector3(0, 0.42 * scaleFactor, 0.152 * scaleFactor),
+      new THREE.Vector3(0, 0.24 * scaleFactor, 0.142 * scaleFactor),
+    ]);
+    const tie = new THREE.Mesh(
+      new THREE.TubeGeometry(tieCurve, 14, 0.032 * scaleFactor, 14, false),
+      new THREE.MeshPhysicalMaterial({ color: 0xdc2626, map: fabricTex, roughness: 0.55 })
+    );
+    tie.scale.set(1.15, 1, 0.45);
+    const tieKnot = new THREE.Mesh(
+      new THREE.SphereGeometry(0.036 * scaleFactor, 18, 14),
+      new THREE.MeshPhysicalMaterial({ color: 0xb91c1c, roughness: 0.5 })
+    );
+    tieKnot.position.set(0, 0.565 * scaleFactor, 0.132 * scaleFactor);
+    bodyPivot.add(tie, tieKnot);
+  } else if (kind === 'farmer') {
+    const bib = new THREE.Mesh(
+      makeOrganicPouchGeo(0.28 * scaleFactor, 0.3 * scaleFactor, 0.08 * scaleFactor),
+      pantsMat
+    );
+    bib.position.set(0, 0.29 * scaleFactor, 0.122 * scaleFactor);
+    [-0.1, 0.1].forEach((sx) => {
+      const strap = new THREE.Mesh(
+        new THREE.CapsuleGeometry(0.022 * scaleFactor, 0.22 * scaleFactor, 10, 14),
+        pantsMat
+      );
+      strap.position.set(sx * scaleFactor, 0.47 * scaleFactor, 0.112 * scaleFactor);
+      const btn = new THREE.Mesh(
+        new THREE.SphereGeometry(0.018 * scaleFactor, 14, 12),
+        new THREE.MeshPhysicalMaterial({ color: 0xfacc15, metalness: 0.8, roughness: 0.2 })
+      );
+      btn.position.set(sx * scaleFactor, 0.4 * scaleFactor, 0.142 * scaleFactor);
+      bodyPivot.add(strap, btn);
+    });
+    const bandana = new THREE.Mesh(
+      new THREE.TorusGeometry(0.14 * scaleFactor, 0.034 * scaleFactor, 14, 28),
+      new THREE.MeshPhysicalMaterial({ color: 0xef4444, map: fabricTex, roughness: 0.72 })
+    );
+    bandana.rotation.x = Math.PI / 2.2;
+    bandana.position.set(0, 0.095 * scaleFactor + torsoH, 0.02);
+    bodyPivot.add(bib, bandana);
+  } else if (kind === 'doctor') {
+    // Open lab coat lapels + full curved 3D stethoscope around neck
+    const scrub = new THREE.Mesh(
+      makeOrganicPouchGeo(0.18 * scaleFactor, 0.28 * scaleFactor, 0.07 * scaleFactor),
+      shirtMat
+    );
+    scrub.position.set(0, 0.43 * scaleFactor, 0.124 * scaleFactor);
+    const stethMat = new THREE.MeshPhysicalMaterial({ color: 0x1e293b, roughness: 0.28, metalness: 0.45, clearcoat: 0.55 });
+    const stethCurve = new THREE.CatmullRomCurve3([
+      new THREE.Vector3(-0.11 * scaleFactor, 0.52 * scaleFactor, 0.09 * scaleFactor),
+      new THREE.Vector3(-0.13 * scaleFactor, 0.62 * scaleFactor, 0.0),
+      new THREE.Vector3(0, 0.64 * scaleFactor, -0.11 * scaleFactor),
+      new THREE.Vector3(0.13 * scaleFactor, 0.62 * scaleFactor, 0.0),
+      new THREE.Vector3(0.09 * scaleFactor, 0.42 * scaleFactor, 0.148 * scaleFactor),
+    ]);
+    const stethTube = new THREE.Mesh(
+      new THREE.TubeGeometry(stethCurve, 26, 0.017 * scaleFactor, 14, false),
+      stethMat
+    );
     const chestDisc = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.045 * scaleFactor, 0.045 * scaleFactor, 0.02, 12),
-      new THREE.MeshPhysicalMaterial({ color: 0xcbd5e1, metalness: 0.85, roughness: 0.18, clearcoat: 0.7 })
+      new THREE.CylinderGeometry(0.044 * scaleFactor, 0.044 * scaleFactor, 0.022, 24),
+      new THREE.MeshPhysicalMaterial({ color: 0xe2e8f0, metalness: 0.9, roughness: 0.14, clearcoat: 0.85 })
     );
     chestDisc.rotation.x = Math.PI / 2;
-    chestDisc.position.set(0.08 * scaleFactor, 0.36 * scaleFactor, 0.15 * scaleFactor);
-    bodyPivot.add(scrub, stethRing, chestDisc);
+    chestDisc.position.set(0.09 * scaleFactor, 0.41 * scaleFactor, 0.155 * scaleFactor);
+    bodyPivot.add(scrub, stethTube, chestDisc);
     accentMeshes.push(scrub);
   } else if (kind === 'police') {
     const badge = new THREE.Mesh(
-      new THREE.OctahedronGeometry(0.055 * scaleFactor, 0),
+      new THREE.OctahedronGeometry(0.055 * scaleFactor, 1),
       new THREE.MeshPhysicalMaterial({ color: 0xfacc15, metalness: 0.85, roughness: 0.18, clearcoat: 0.7 })
     );
     badge.position.set(0.11 * scaleFactor, 0.45 * scaleFactor, 0.145 * scaleFactor);
     bodyPivot.add(badge);
   } else if (kind === 'chef') {
     const scarf = new THREE.Mesh(
-      new THREE.TorusGeometry(0.14 * scaleFactor, 0.032 * scaleFactor, 8, 16),
+      new THREE.TorusGeometry(0.14 * scaleFactor, 0.032 * scaleFactor, 14, 28),
       shirtMat
     );
     scarf.rotation.x = Math.PI / 2.2;
-    scarf.position.set(0, 0.1 * scaleFactor + torsoH, 0.02);
+    scarf.position.set(0, 0.095 * scaleFactor + torsoH, 0.02);
     const apron = new THREE.Mesh(
-      makeRoundedBox(0.32 * scaleFactor, 0.44 * scaleFactor, 0.04 * scaleFactor, 0.02),
+      makePleatedSkirtGeo(0.2 * scaleFactor, 0.25 * scaleFactor, 0.34 * scaleFactor, 32, 0.02),
       whiteMat
     );
-    apron.position.set(0, 0.14 * scaleFactor, 0.135 * scaleFactor);
+    apron.position.set(0, 0.08 * scaleFactor, 0.02 * scaleFactor);
     bodyPivot.add(scarf, apron);
     accentMeshes.push(scarf);
   } else if (['king', 'queen', 'prince', 'princess', 'superhero', 'witch'].includes(kind)) {
@@ -784,39 +986,55 @@ function createHumanoidCharacter(
       const capeMat = new THREE.MeshPhysicalMaterial({
         color: kind === 'superhero' ? 0xfacc15 : kind === 'witch' ? 0x1e1b4b : 0x991b1b,
         map: fabricTex,
-        roughness: 0.68,
-        sheen: 0.4,
+        roughness: 0.72,
+        sheen: 0.45,
         side: THREE.DoubleSide,
       });
       const cape = new THREE.Mesh(
-        new THREE.BoxGeometry(0.46 * scaleFactor, 0.76 * scaleFactor, 0.04 * scaleFactor),
+        makeDrapedCapeGeo(0.54 * scaleFactor, 0.8 * scaleFactor),
         capeMat
       );
-      cape.position.set(0, 0.28 * scaleFactor, -0.17 * scaleFactor);
-      cape.rotation.x = 0.12;
-      addOutline(cape, 1.03);
+      cape.position.set(0, 0.58 * scaleFactor, -0.14 * scaleFactor);
+      addOutline(cape, 1.028);
       bodyPivot.add(cape);
+
+      if (kind === 'king' || kind === 'queen') {
+        // Fluffy ermine trim collar around cape shoulders
+        for (let i = -3; i <= 3; i++) {
+          const furPuff = new THREE.Mesh(new THREE.SphereGeometry(0.055 * scaleFactor, 18, 14), whiteMat);
+          furPuff.position.set(i * 0.055 * scaleFactor, 0.58 * scaleFactor, -0.06 * scaleFactor - (3 - Math.abs(i)) * 0.025);
+          bodyPivot.add(furPuff);
+        }
+      }
     }
     if (kind === 'superhero') {
       const emblem = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.09 * scaleFactor, 0.09 * scaleFactor, 0.04, 5),
+        new THREE.CylinderGeometry(0.09 * scaleFactor, 0.09 * scaleFactor, 0.04, 24),
         new THREE.MeshPhysicalMaterial({ color: 0xfacc15, emissive: 0xf59e0b, emissiveIntensity: 0.4, clearcoat: 0.6 })
       );
       emblem.rotation.x = Math.PI / 2;
       emblem.position.set(0, 0.44 * scaleFactor, 0.145 * scaleFactor);
       bodyPivot.add(emblem);
     } else if (kind === 'prince') {
+      // Curved diagonal royal sash hugging torso (zero BoxGeometry)
+      const sashCurve = new THREE.CatmullRomCurve3([
+        new THREE.Vector3(-0.14 * scaleFactor, 0.55 * scaleFactor, 0.11 * scaleFactor),
+        new THREE.Vector3(0, 0.36 * scaleFactor, 0.155 * scaleFactor),
+        new THREE.Vector3(0.18 * scaleFactor, 0.16 * scaleFactor, 0.12 * scaleFactor),
+        new THREE.Vector3(0.14 * scaleFactor, 0.15 * scaleFactor, -0.13 * scaleFactor),
+        new THREE.Vector3(-0.14 * scaleFactor, 0.55 * scaleFactor, -0.1 * scaleFactor),
+        new THREE.Vector3(-0.14 * scaleFactor, 0.55 * scaleFactor, 0.11 * scaleFactor),
+      ]);
       const sash = new THREE.Mesh(
-        new THREE.BoxGeometry(0.08 * scaleFactor, 0.56 * scaleFactor, 0.28 * scaleFactor),
-        new THREE.MeshPhysicalMaterial({ color: 0xfacc15, roughness: 0.4, clearcoat: 0.35 })
+        new THREE.TubeGeometry(sashCurve, 28, 0.034 * scaleFactor, 14, true),
+        new THREE.MeshPhysicalMaterial({ color: 0xfacc15, roughness: 0.35, clearcoat: 0.45 })
       );
-      sash.position.set(0, 0.36 * scaleFactor, 0);
-      sash.rotation.z = 0.42;
+      sash.scale.set(1, 1, 0.65);
       bodyPivot.add(sash);
     }
   } else {
     const pocket = new THREE.Mesh(
-      makeRoundedBox(0.22 * scaleFactor, 0.14 * scaleFactor, 0.055 * scaleFactor, 0.02),
+      makeOrganicPouchGeo(0.22 * scaleFactor, 0.14 * scaleFactor, 0.06 * scaleFactor),
       shirtMat
     );
     pocket.position.set(0, 0.23 * scaleFactor, 0.13 * scaleFactor);
@@ -824,64 +1042,64 @@ function createHumanoidCharacter(
     accentMeshes.push(pocket);
   }
 
-  // Adventure Backpacks with Dual Straps & Buckles (Boys, Girls, Kids, Teenager, Twins)
+  // Adventure Backpacks with Smooth Curved Straps & Buckles (Boys, Girls, Kids, Teenager, Twins)
   if (['boy', 'girl', 'teenager', 'kid', 'son', 'daughter', 'twins'].includes(kind)) {
     const packColor = isFemale ? 0x7c3aed : 0xea580c;
     const strapColor = isFemale ? 0x5b21b6 : 0xf59e0b;
     const packMat = new THREE.MeshPhysicalMaterial({
       color: packColor,
       map: fabricTex,
-      roughness: 0.65,
-      sheen: 0.3,
+      roughness: 0.72,
+      sheen: 0.32,
     });
     const strapMat = new THREE.MeshPhysicalMaterial({
       color: strapColor,
-      roughness: 0.52,
+      roughness: 0.56,
     });
     const buckleMat = new THREE.MeshPhysicalMaterial({
       color: 0xe2e8f0,
-      metalness: 0.75,
-      roughness: 0.22,
+      metalness: 0.78,
+      roughness: 0.2,
       clearcoat: 0.6,
     });
 
     const packBody = new THREE.Mesh(
-      makeRoundedBox(0.36 * scaleFactor, 0.42 * scaleFactor, 0.19 * scaleFactor, 0.06),
+      makeOrganicPouchGeo(0.36 * scaleFactor, 0.42 * scaleFactor, 0.2 * scaleFactor, 32),
       packMat
     );
-    packBody.position.set(0, 0.35 * scaleFactor, -0.21 * scaleFactor);
+    packBody.position.set(0, 0.35 * scaleFactor, -0.2 * scaleFactor);
     addOutline(packBody, 1.025);
 
     const packPocket = new THREE.Mesh(
-      makeRoundedBox(0.28 * scaleFactor, 0.18 * scaleFactor, 0.07 * scaleFactor, 0.03),
+      makeOrganicPouchGeo(0.26 * scaleFactor, 0.18 * scaleFactor, 0.09 * scaleFactor, 24),
       strapMat
     );
-    packPocket.position.set(0, 0.24 * scaleFactor, -0.3 * scaleFactor);
+    packPocket.position.set(0, 0.24 * scaleFactor, -0.29 * scaleFactor);
     addOutline(packPocket, 1.025);
 
     bodyPivot.add(packBody, packPocket);
 
     [-1, 1].forEach((s) => {
-      const strapFront = new THREE.Mesh(
-        makeRoundedBox(0.055 * scaleFactor, 0.38 * scaleFactor, 0.035 * scaleFactor, 0.015),
+      const strapCurve = new THREE.CatmullRomCurve3([
+        new THREE.Vector3(s * 0.135 * scaleFactor, 0.22 * scaleFactor, 0.135 * scaleFactor),
+        new THREE.Vector3(s * 0.145 * scaleFactor, 0.42 * scaleFactor, 0.145 * scaleFactor),
+        new THREE.Vector3(s * 0.135 * scaleFactor, 0.575 * scaleFactor, 0.04 * scaleFactor),
+        new THREE.Vector3(s * 0.125 * scaleFactor, 0.52 * scaleFactor, -0.14 * scaleFactor),
+      ]);
+      const strap = new THREE.Mesh(
+        new THREE.TubeGeometry(strapCurve, 18, 0.022 * scaleFactor, 12, false),
         strapMat
       );
-      strapFront.position.set(s * 0.135 * scaleFactor, 0.38 * scaleFactor, 0.138 * scaleFactor);
-      const strapTop = new THREE.Mesh(
-        makeRoundedBox(0.055 * scaleFactor, 0.04 * scaleFactor, 0.3 * scaleFactor, 0.015),
-        strapMat
-      );
-      strapTop.position.set(s * 0.135 * scaleFactor, 0.58 * scaleFactor, -0.02 * scaleFactor);
       const buckle = new THREE.Mesh(
-        makeRoundedBox(0.064 * scaleFactor, 0.046 * scaleFactor, 0.044 * scaleFactor, 0.008),
+        new THREE.TorusGeometry(0.028 * scaleFactor, 0.008 * scaleFactor, 10, 20),
         buckleMat
       );
-      buckle.position.set(s * 0.135 * scaleFactor, 0.36 * scaleFactor, 0.145 * scaleFactor);
-      bodyPivot.add(strapFront, strapTop, buckle);
+      buckle.position.set(s * 0.14 * scaleFactor, 0.34 * scaleFactor, 0.145 * scaleFactor);
+      bodyPivot.add(strap, buckle);
     });
   }
 
-  // Fairy & Angel Wings
+  // Sculpted Translucent Iridescent Fairy Butterfly Wings & Layered Feathered Angel Wings
   let leftWingPivot: THREE.Group | undefined;
   let rightWingPivot: THREE.Group | undefined;
   if (kind === 'fairy' || kind === 'angel') {
@@ -889,31 +1107,22 @@ function createHumanoidCharacter(
     const wingMat = new THREE.MeshPhysicalMaterial({
       color: isFairy ? 0xa5f3fc : 0xffffff,
       emissive: isFairy ? 0x38bdf8 : 0xe2e8f0,
-      emissiveIntensity: isFairy ? 0.55 : 0.25,
+      emissiveIntensity: isFairy ? 0.5 : 0.25,
       transparent: isFairy,
-      opacity: isFairy ? 0.8 : 1,
-      roughness: 0.2,
-      clearcoat: 0.7,
+      opacity: isFairy ? 0.78 : 1,
+      iridescence: isFairy ? 0.92 : 0.25,
+      roughness: 0.18,
+      clearcoat: 0.75,
       side: THREE.DoubleSide,
     });
+    const wingGeo = makeSculptedWingGeo(isFairy, scaleFactor);
     const makeWing = (side: -1 | 1) => {
       const wp = new THREE.Group();
-      wp.position.set(side * 0.1 * scaleFactor, 0.45 * scaleFactor, -0.14 * scaleFactor);
-      const upperWing = new THREE.Mesh(
-        new THREE.SphereGeometry(0.26 * scaleFactor, 32, 24),
-        wingMat
-      );
-      upperWing.scale.set(1.4, 0.95, 0.14);
-      upperWing.position.set(side * 0.34 * scaleFactor, 0.12 * scaleFactor, -0.04);
-      upperWing.rotation.z = side * 0.35;
-      const lowerWing = new THREE.Mesh(
-        new THREE.SphereGeometry(0.18 * scaleFactor, 24, 18),
-        wingMat
-      );
-      lowerWing.scale.set(1.15, 0.8, 0.12);
-      lowerWing.position.set(side * 0.25 * scaleFactor, -0.14 * scaleFactor, -0.04);
-      lowerWing.rotation.z = side * -0.25;
-      wp.add(upperWing, lowerWing);
+      wp.position.set(side * 0.08 * scaleFactor, 0.44 * scaleFactor, -0.14 * scaleFactor);
+      const wingMesh = new THREE.Mesh(wingGeo, wingMat);
+      wingMesh.scale.x = side;
+      wingMesh.rotation.y = side * -0.28;
+      wp.add(wingMesh);
       bodyPivot.add(wp);
       return wp;
     };
@@ -921,13 +1130,13 @@ function createHumanoidCharacter(
     rightWingPivot = makeWing(1);
   }
 
-  // Head Pivot (Authentic Chibi-Pixar Sculpted Head + Recessed Glossy 3D Eyeballs + Protruding Eyelids)
+  // Head Pivot (Authentic 1:3.5 Kid / Chibi-Pixar Sculpted Head + Glossy 3D Eyeballs)
   const headPivot = new THREE.Group();
   headPivot.position.y = 0.085 * scaleFactor + torsoH;
   bodyPivot.add(headPivot);
 
   const neck = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.072 * scaleFactor, 0.094 * scaleFactor, 0.11 * scaleFactor, 28),
+    new THREE.CylinderGeometry(0.072 * scaleFactor, 0.094 * scaleFactor, 0.11 * scaleFactor, 32),
     skinMat
   );
   neck.position.y = 0.045 * scaleFactor;
@@ -943,21 +1152,21 @@ function createHumanoidCharacter(
   const skinTex = createChibiSkinTexture(skinColor, hasFreckles, isFemale);
   const faceMat = new THREE.MeshPhysicalMaterial({
     map: skinTex,
-    roughness: 0.46,
+    roughness: 0.42,
     metalness: 0.02,
-    clearcoat: 0.16,
-    clearcoatRoughness: 0.42,
+    clearcoat: 0.15,
+    clearcoatRoughness: 0.4,
   });
   const earInnerMat = new THREE.MeshPhysicalMaterial({
     color: new THREE.Color(skinColor).lerp(new THREE.Color(0xfb7185), 0.34),
-    roughness: 0.62,
+    roughness: 0.58,
   });
 
-  const headRadius = 0.345 * scaleFactor;
+  // Expressive Kid Proportions (~1:3.5 head-to-body ratio for kids/son/daughter/twins)
+  const headRadius = (isYoungKid ? 0.375 : 0.345) * scaleFactor;
   const headUnitScale = headRadius / 0.55;
   const headCenterY = 0.075 * scaleFactor + headRadius * 0.96;
   const head = new THREE.Mesh(getChibiHeadGeometry(), faceMat);
-  // Note: head.rotation.y = -PI/2 maps local Z -> world X (width) and local X -> world Z (depth)
   head.scale.set(1.04 * headUnitScale, 0.97 * headUnitScale, 1.13 * headUnitScale);
   head.rotation.y = -Math.PI / 2;
   head.position.y = headCenterY;
@@ -970,11 +1179,11 @@ function createHumanoidCharacter(
     earGroup.position.set(side * headRadius * 1.11, headCenterY - 0.015 * scaleFactor, -0.02 * scaleFactor);
     earGroup.rotation.y = side * -0.24;
 
-    const outerEar = new THREE.Mesh(new THREE.SphereGeometry(0.068 * scaleFactor, 24, 18), skinMat);
+    const outerEar = new THREE.Mesh(new THREE.SphereGeometry(0.068 * scaleFactor, 28, 22), skinMat);
     outerEar.scale.set(0.62, 1.04, 0.72);
     addOutline(outerEar, 1.03, 0x2a1810);
 
-    const innerEar = new THREE.Mesh(new THREE.SphereGeometry(0.044 * scaleFactor, 18, 14), earInnerMat);
+    const innerEar = new THREE.Mesh(new THREE.SphereGeometry(0.044 * scaleFactor, 22, 16), earInnerMat);
     innerEar.scale.set(0.55, 0.85, 0.55);
     innerEar.position.set(side * 0.008 * scaleFactor, 0, 0.014 * scaleFactor);
 
@@ -983,10 +1192,10 @@ function createHumanoidCharacter(
   });
 
   // Cute sculpted 3D button nose with subtle bridge
-  const noseBridge = new THREE.Mesh(new THREE.SphereGeometry(0.022 * scaleFactor, 16, 12), skinMat);
+  const noseBridge = new THREE.Mesh(new THREE.SphereGeometry(0.022 * scaleFactor, 20, 16), skinMat);
   noseBridge.scale.set(0.85, 1.25, 0.9);
   noseBridge.position.set(0, headCenterY - headRadius * 0.045, headRadius * 1.015);
-  const nose = new THREE.Mesh(new THREE.SphereGeometry(0.036 * scaleFactor, 24, 18), earInnerMat);
+  const nose = new THREE.Mesh(new THREE.SphereGeometry(0.036 * scaleFactor, 28, 22), earInnerMat);
   nose.scale.set(1.12, 0.82, 0.96);
   nose.position.set(0, headCenterY - headRadius * 0.088, headRadius * 1.045);
   headPivot.add(noseBridge, nose);
@@ -1022,26 +1231,25 @@ function createHumanoidCharacter(
     eg.rotation.y = side * 0.14;
 
     const r = 0.066 * scaleFactor;
-    const sclera = new THREE.Mesh(new THREE.SphereGeometry(r, 24, 20), whiteMat);
+    const sclera = new THREE.Mesh(new THREE.SphereGeometry(r, 32, 24), whiteMat);
     sclera.scale.set(0.98, 1.06, 0.68);
 
-    const iris = new THREE.Mesh(new THREE.SphereGeometry(r * 0.8, 24, 18), irisMat);
+    const iris = new THREE.Mesh(new THREE.SphereGeometry(r * 0.8, 32, 24), irisMat);
     iris.scale.set(0.95, 1.02, 0.42);
     iris.position.set(side * -0.004 * scaleFactor, 0, r * 0.42);
     iris.rotation.y = -Math.PI / 2;
 
-    const cornea = new THREE.Mesh(new THREE.SphereGeometry(r * 1.02, 24, 18), corneaGlassMat);
+    const cornea = new THREE.Mesh(new THREE.SphereGeometry(r * 1.02, 32, 24), corneaGlassMat);
     cornea.scale.set(0.98, 1.06, 0.72);
     cornea.position.z = r * 0.06;
 
-    const sp1 = new THREE.Mesh(new THREE.SphereGeometry(r * 0.2, 12, 10), catchMat);
+    const sp1 = new THREE.Mesh(new THREE.SphereGeometry(r * 0.2, 16, 12), catchMat);
     sp1.position.set(-r * 0.28, r * 0.32, r * 0.78);
-    const sp2 = new THREE.Mesh(new THREE.SphereGeometry(r * 0.1, 10, 8), catchMat);
+    const sp2 = new THREE.Mesh(new THREE.SphereGeometry(r * 0.1, 12, 10), catchMat);
     sp2.position.set(r * 0.26, -r * 0.22, r * 0.75);
 
-    // Protruding 3D curved upper eyelid hood + dark lash rim
     const upperLidHood = new THREE.Mesh(
-      new THREE.TorusGeometry(r * 1.02, 0.017 * scaleFactor, 12, 24, Math.PI * 0.92),
+      new THREE.TorusGeometry(r * 1.02, 0.017 * scaleFactor, 14, 32, Math.PI * 0.92),
       skinMat
     );
     upperLidHood.rotation.z = Math.PI * 0.04;
@@ -1049,14 +1257,14 @@ function createHumanoidCharacter(
     upperLidHood.position.set(0, r * 0.14, r * 0.28);
 
     const lashArc = new THREE.Mesh(
-      new THREE.TorusGeometry(r * 1.0, (isFemale ? 0.012 : 0.009) * scaleFactor, 10, 24, Math.PI * 0.88),
+      new THREE.TorusGeometry(r * 1.0, (isFemale ? 0.012 : 0.009) * scaleFactor, 12, 32, Math.PI * 0.88),
       lashMat
     );
     lashArc.rotation.z = Math.PI * 0.06;
     lashArc.position.set(0, r * 0.08, r * 0.36);
 
     const lowerLid = new THREE.Mesh(
-      new THREE.TorusGeometry(r * 0.96, 0.01 * scaleFactor, 10, 22, Math.PI * 0.76),
+      new THREE.TorusGeometry(r * 0.96, 0.01 * scaleFactor, 12, 28, Math.PI * 0.76),
       skinMat
     );
     lowerLid.rotation.z = Math.PI + Math.PI * 0.12;
@@ -1066,7 +1274,7 @@ function createHumanoidCharacter(
 
     if (isFemale) {
       const lashWing = new THREE.Mesh(
-        new THREE.ConeGeometry(0.009 * scaleFactor, 0.032 * scaleFactor, 8),
+        new THREE.ConeGeometry(0.009 * scaleFactor, 0.032 * scaleFactor, 12),
         lashMat
       );
       lashWing.position.set(side * r * 1.0, r * 0.38, r * 0.32);
@@ -1092,45 +1300,49 @@ function createHumanoidCharacter(
   rightBrow.rotation.y = 0.14;
   headPivot.add(leftBrow, rightBrow);
 
-  // Expressive Animated 3D Lips & Open Smile Mouth (with pearly teeth & pink tongue depth)
-  const mouthGeo = makeRoundedBox(0.115 * scaleFactor, 0.04 * scaleFactor, 0.036 * scaleFactor, 0.014);
-  const mouthMesh = new THREE.Mesh(mouthGeo, mouthMat);
+  // Expressive Animated 3D Lips & Open Smile Mouth (zero BoxGeometry: Sphere cavity + Torus arc teeth & lips + Tongue)
+  const mouthMesh = new THREE.Mesh(
+    new THREE.SphereGeometry(0.056 * scaleFactor, 24, 18),
+    mouthMat
+  );
+  mouthMesh.scale.set(1.18, 0.42, 0.52);
   mouthMesh.position.set(0, headCenterY - headRadius * 0.34, headRadius * 0.96);
 
   const lipMat = new THREE.MeshPhysicalMaterial({
     color: isFemale ? 0xf43f5e : 0xe07a6c,
-    roughness: 0.35,
-    clearcoat: 0.35,
+    roughness: 0.34,
+    clearcoat: 0.38,
   });
   const upperLip = new THREE.Mesh(
-    new THREE.TorusGeometry(0.052 * scaleFactor, 0.009 * scaleFactor, 12, 24, Math.PI),
+    new THREE.TorusGeometry(0.052 * scaleFactor, 0.009 * scaleFactor, 14, 28, Math.PI),
     lipMat
   );
-  upperLip.position.set(0, 0.012 * scaleFactor, 0.01 * scaleFactor);
+  upperLip.position.set(0, 0.012 * scaleFactor, 0.012 * scaleFactor);
   const lowerLip = new THREE.Mesh(
-    new THREE.TorusGeometry(0.05 * scaleFactor, 0.01 * scaleFactor, 12, 24, Math.PI),
+    new THREE.TorusGeometry(0.05 * scaleFactor, 0.01 * scaleFactor, 14, 28, Math.PI),
     lipMat
   );
   lowerLip.rotation.z = Math.PI;
-  lowerLip.position.set(0, -0.01 * scaleFactor, 0.01 * scaleFactor);
+  lowerLip.position.set(0, -0.01 * scaleFactor, 0.012 * scaleFactor);
 
   const upperTeeth = new THREE.Mesh(
-    makeRoundedBox(0.088 * scaleFactor, 0.014 * scaleFactor, 0.024 * scaleFactor, 0.005),
+    new THREE.TorusGeometry(0.042 * scaleFactor, 0.008 * scaleFactor, 10, 20, Math.PI * 0.85),
     whiteMat
   );
-  upperTeeth.position.set(0, 0.01 * scaleFactor, 0.012 * scaleFactor);
+  upperTeeth.rotation.z = Math.PI * 0.075;
+  upperTeeth.position.set(0, 0.008 * scaleFactor, 0.014 * scaleFactor);
   const tongue = new THREE.Mesh(
-    new THREE.SphereGeometry(0.032 * scaleFactor, 20, 14),
+    new THREE.SphereGeometry(0.032 * scaleFactor, 22, 16),
     new THREE.MeshPhysicalMaterial({ color: 0xf43f5e, roughness: 0.32 })
   );
   tongue.scale.set(1.15, 0.45, 0.75);
-  tongue.position.set(0, -0.008 * scaleFactor, 0.012 * scaleFactor);
+  tongue.position.set(0, -0.008 * scaleFactor, 0.014 * scaleFactor);
   mouthMesh.add(upperLip, lowerLip, upperTeeth, tongue);
   headPivot.add(mouthMesh);
 
   // Layered Sculpted 3D Hair Crown + Curved Bangs & Side Locks
   const hairTop = new THREE.Mesh(
-    new THREE.SphereGeometry(headRadius * 1.07, 40, 28, 0, Math.PI * 2, 0, Math.PI * 0.56),
+    new THREE.SphereGeometry(headRadius * 1.07, 44, 32, 0, Math.PI * 2, 0, Math.PI * 0.56),
     hairMat
   );
   hairTop.scale.set(1.13, 0.98, 1.06);
@@ -1139,7 +1351,7 @@ function createHumanoidCharacter(
   headPivot.add(hairTop);
 
   const hairBack = new THREE.Mesh(
-    new THREE.SphereGeometry(headRadius * 1.06, 36, 26, Math.PI * 0.68, Math.PI * 1.64, Math.PI * 0.2, Math.PI * 0.58),
+    new THREE.SphereGeometry(headRadius * 1.06, 40, 28, Math.PI * 0.68, Math.PI * 1.64, Math.PI * 0.2, Math.PI * 0.58),
     hairMat
   );
   hairBack.scale.set(1.13, 0.98, 1.06);
@@ -1155,14 +1367,13 @@ function createHumanoidCharacter(
         new THREE.Vector3(frac * 0.19 * scaleFactor, -0.065 * scaleFactor, 0.095 * scaleFactor),
         new THREE.Vector3(frac * 0.22 * scaleFactor, -0.125 * scaleFactor, 0.065 * scaleFactor),
       ]);
-      const bangGeo = new THREE.TubeGeometry(curve, 12, (0.044 - Math.abs(frac) * 0.008) * scaleFactor, 12, false);
+      const bangGeo = new THREE.TubeGeometry(curve, 14, (0.044 - Math.abs(frac) * 0.008) * scaleFactor, 14, false);
       const bang = new THREE.Mesh(bangGeo, hairMat);
       bang.position.set(frac * 0.08 * scaleFactor, yBase, zBase - Math.abs(frac) * 0.055 * scaleFactor);
       bang.rotation.x = sweep * 0.35;
       addOutline(bang, 1.028, 0x2a1810);
       headPivot.add(bang);
     }
-    // Soft sculpted sideburn / temple locks framing the cheeks
     [-1, 1].forEach((side) => {
       const sideCurve = new THREE.CatmullRomCurve3([
         new THREE.Vector3(0, 0.04 * scaleFactor, 0),
@@ -1170,7 +1381,7 @@ function createHumanoidCharacter(
         new THREE.Vector3(side * 0.01 * scaleFactor, -0.17 * scaleFactor, 0.05 * scaleFactor),
       ]);
       const sideLock = new THREE.Mesh(
-        new THREE.TubeGeometry(sideCurve, 10, 0.036 * scaleFactor, 10, false),
+        new THREE.TubeGeometry(sideCurve, 12, 0.036 * scaleFactor, 12, false),
         hairMat
       );
       sideLock.position.set(side * headRadius * 0.99, headCenterY + 0.05 * scaleFactor, 0.08 * scaleFactor);
@@ -1185,7 +1396,6 @@ function createHumanoidCharacter(
   if (kind === 'boy' || kind === 'son' || kind === 'kid' || kind === 'twins') {
     addCurvedHairBangs(5, headCenterY + 0.12 * scaleFactor, headRadius * 0.9, 0.45);
 
-    // Two-Tone Tricolor Baseball Cap with Curved ExtrudeGeometry Visor
     const redCapMat = new THREE.MeshPhysicalMaterial({
       color: 0xdc2626,
       map: fabricTex,
@@ -1225,26 +1435,25 @@ function createHumanoidCharacter(
     headPivot.add(capBack, capWhiteFront, capBrim, capButton);
     accentMeshes.push(capBack);
   } else if (kind === 'teenager') {
-    addCurvedHairBangs(4, headCenterY + 0.12 * scaleFactor, headRadius * 0.88, 0.42);
+    addCurvedHairBangs(5, headCenterY + 0.125 * scaleFactor, headRadius * 0.9, 0.46);
     const beanie = new THREE.Mesh(
-      new THREE.SphereGeometry(headRadius * 1.11, 34, 24, 0, Math.PI * 2, 0, Math.PI * 0.46),
+      new THREE.SphereGeometry(headRadius * 1.11, 36, 26, 0, Math.PI * 2, 0, Math.PI * 0.46),
       shirtMat
     );
     beanie.scale.set(1.13, 0.98, 1.06);
     beanie.position.set(0, headCenterY + 0.048 * scaleFactor, -0.02);
     addOutline(beanie, 1.024, 0x2a1810);
-    const band = new THREE.Mesh(new THREE.TorusGeometry(headRadius * 1.12, 0.024, 14, 34, Math.PI), darkMat);
+    const band = new THREE.Mesh(new THREE.TorusGeometry(headRadius * 1.12, 0.024, 14, 36, Math.PI), darkMat);
     band.position.y = headCenterY + 0.035 * scaleFactor;
     headPivot.add(beanie, band);
     accentMeshes.push(beanie);
   } else if (kind === 'girl' || kind === 'daughter') {
     addCurvedHairBangs(4, headCenterY + 0.115 * scaleFactor, headRadius * 0.88, 0.5);
 
-    // Animated flowing swooped S-curve Lathe ponytail
     ponytailPivot = new THREE.Group();
     ponytailPivot.position.set(headRadius * 0.74, headCenterY + 0.06 * scaleFactor, -headRadius * 0.76);
 
-    const tie = new THREE.Mesh(new THREE.TorusGeometry(0.056 * scaleFactor, 0.022, 14, 28), shirtMat);
+    const tie = new THREE.Mesh(new THREE.TorusGeometry(0.056 * scaleFactor, 0.022, 14, 32), shirtMat);
     tie.rotation.y = Math.PI / 3;
 
     const ponyCurve = new THREE.CatmullRomCurve3([
@@ -1254,12 +1463,12 @@ function createHumanoidCharacter(
       new THREE.Vector3(0.16 * scaleFactor, -0.4 * scaleFactor, -0.09 * scaleFactor),
     ]);
     const ponyMesh = new THREE.Mesh(
-      new THREE.TubeGeometry(ponyCurve, 16, 0.078 * scaleFactor, 14, false),
+      new THREE.TubeGeometry(ponyCurve, 18, 0.078 * scaleFactor, 16, false),
       hairMat
     );
     addOutline(ponyMesh, 1.028, 0x2a1810);
 
-    const tailTip = new THREE.Mesh(new THREE.ConeGeometry(0.075 * scaleFactor, 0.16 * scaleFactor, 20), hairMat);
+    const tailTip = new THREE.Mesh(new THREE.ConeGeometry(0.075 * scaleFactor, 0.16 * scaleFactor, 24), hairMat);
     tailTip.position.set(0.16 * scaleFactor, -0.46 * scaleFactor, -0.08 * scaleFactor);
     tailTip.rotation.z = Math.PI + 0.18;
     addOutline(tailTip, 1.028, 0x2a1810);
@@ -1272,7 +1481,7 @@ function createHumanoidCharacter(
       [-1, 1].forEach((side) => {
         for (let b = 0; b < 4; b++) {
           const bead = new THREE.Mesh(
-            new THREE.SphereGeometry((0.055 - b * 0.007) * scaleFactor, 20, 16),
+            new THREE.SphereGeometry((0.055 - b * 0.007) * scaleFactor, 24, 18),
             hairMat
           );
           bead.position.set(
@@ -1286,69 +1495,96 @@ function createHumanoidCharacter(
       });
     }
   } else if (kind === 'woman' || kind === 'mother' || kind === 'grandma') {
-    addCurvedHairBangs(3, headCenterY + 0.115 * scaleFactor, headRadius * 0.88, 0.48);
-    const backBun = new THREE.Mesh(new THREE.SphereGeometry(0.145 * scaleFactor, 28, 22), hairMat);
+    addCurvedHairBangs(4, headCenterY + 0.115 * scaleFactor, headRadius * 0.88, 0.48);
+    const backBun = new THREE.Mesh(new THREE.SphereGeometry(0.15 * scaleFactor, 32, 24), hairMat);
     backBun.position.set(0, headCenterY + 0.05 * scaleFactor, -headRadius * 0.98);
     addOutline(backBun, 1.025, 0x2a1810);
-    headPivot.add(backBun);
+    const bunPin = new THREE.Mesh(
+      new THREE.TorusGeometry(0.11 * scaleFactor, 0.014 * scaleFactor, 12, 28),
+      shirtMat
+    );
+    bunPin.position.set(0, headCenterY + 0.05 * scaleFactor, -headRadius * 0.88);
+    headPivot.add(backBun, bunPin);
     if (kind === 'grandma') {
-      const frameMat = new THREE.MeshPhysicalMaterial({ color: 0x94a3b8, metalness: 0.75, roughness: 0.22, clearcoat: 0.7 });
-      const lensGeo = new THREE.TorusGeometry(0.074 * scaleFactor, 0.01, 14, 28);
+      const frameMat = new THREE.MeshPhysicalMaterial({ color: 0x94a3b8, metalness: 0.78, roughness: 0.2, clearcoat: 0.7 });
+      const lensGeo = new THREE.TorusGeometry(0.074 * scaleFactor, 0.01, 14, 32);
       const lL = new THREE.Mesh(lensGeo, frameMat);
       lL.position.set(-eyeX, eyeY, eyeZ + 0.065 * scaleFactor);
       const lR = lL.clone();
       lR.position.x = eyeX;
-      headPivot.add(lL, lR);
+      const bridge = new THREE.Mesh(new THREE.TorusGeometry(0.038 * scaleFactor, 0.008 * scaleFactor, 10, 20, Math.PI), frameMat);
+      bridge.position.set(0, eyeY + 0.01, eyeZ + 0.065 * scaleFactor);
+      headPivot.add(lL, lR, bridge);
     }
   } else if (kind === 'teacher' || kind === 'grandpa' || kind === 'father') {
     addCurvedHairBangs(4, headCenterY + 0.115 * scaleFactor, headRadius * 0.88, 0.42);
     if (kind === 'teacher' || kind === 'grandpa') {
-      const frameMat = new THREE.MeshPhysicalMaterial({ color: 0x1e293b, roughness: 0.22, metalness: 0.75, clearcoat: 0.6 });
-      const lensGeo = new THREE.TorusGeometry(0.076 * scaleFactor, 0.011, 14, 28);
+      const frameMat = new THREE.MeshPhysicalMaterial({ color: 0x1e293b, roughness: 0.22, metalness: 0.75, clearcoat: 0.65 });
+      const lensGeo = new THREE.TorusGeometry(0.076 * scaleFactor, 0.011, 14, 32);
       const leftLens = new THREE.Mesh(lensGeo, frameMat);
       leftLens.position.set(-eyeX, eyeY, eyeZ + 0.065 * scaleFactor);
       const rightLens = new THREE.Mesh(lensGeo, frameMat);
       rightLens.position.set(eyeX, eyeY, eyeZ + 0.065 * scaleFactor);
-      const bridge = new THREE.Mesh(new THREE.BoxGeometry(0.085 * scaleFactor, 0.014, 0.014), frameMat);
-      bridge.position.set(0, eyeY + 0.005, eyeZ + 0.065 * scaleFactor);
+      // Curved Torus bridge + curved temple arms (zero BoxGeometry)
+      const bridge = new THREE.Mesh(
+        new THREE.TorusGeometry(0.042 * scaleFactor, 0.009 * scaleFactor, 10, 20, Math.PI),
+        frameMat
+      );
+      bridge.position.set(0, eyeY + 0.006, eyeZ + 0.065 * scaleFactor);
+      [-1, 1].forEach((side) => {
+        const temple = new THREE.Mesh(
+          new THREE.CapsuleGeometry(0.007 * scaleFactor, 0.24 * scaleFactor, 8, 12),
+          frameMat
+        );
+        temple.rotation.x = Math.PI / 2;
+        temple.position.set(side * (eyeX + 0.072 * scaleFactor), eyeY + 0.01, eyeZ - 0.06 * scaleFactor);
+        headPivot.add(temple);
+      });
       headPivot.add(leftLens, rightLens, bridge);
     }
     if (kind === 'father' || kind === 'grandpa') {
       const stache = new THREE.Mesh(
-        makeRoundedBox(0.145 * scaleFactor, 0.036 * scaleFactor, 0.04 * scaleFactor, 0.012),
+        new THREE.TorusGeometry(0.058 * scaleFactor, 0.018 * scaleFactor, 12, 24, Math.PI),
         hairMat
       );
-      stache.position.set(0, headCenterY - headRadius * 0.22, headRadius * 1.0);
+      stache.scale.set(1.25, 0.72, 0.85);
+      stache.position.set(0, headCenterY - headRadius * 0.24, headRadius * 1.0);
       headPivot.add(stache);
     }
   } else if (kind === 'farmer') {
     const strawMat = new THREE.MeshPhysicalMaterial({ color: 0xfde047, map: fabricTex, roughness: 0.65, clearcoat: 0.2 });
-    const hatBrim = new THREE.Mesh(new THREE.CylinderGeometry(0.48 * scaleFactor, 0.51 * scaleFactor, 0.04, 36), strawMat);
-    hatBrim.position.y = headCenterY + 0.18 * scaleFactor;
-    addOutline(hatBrim, 1.025, 0x2a1810);
-    const hatCrown = new THREE.Mesh(new THREE.CylinderGeometry(0.22 * scaleFactor, 0.28 * scaleFactor, 0.2, 32), strawMat);
-    hatCrown.position.y = headCenterY + 0.28 * scaleFactor;
-    addOutline(hatCrown, 1.025, 0x2a1810);
+    const hatPts = [
+      new THREE.Vector2(0.52 * scaleFactor, 0),
+      new THREE.Vector2(0.4 * scaleFactor, 0.04 * scaleFactor),
+      new THREE.Vector2(0.29 * scaleFactor, 0.03 * scaleFactor),
+      new THREE.Vector2(0.26 * scaleFactor, 0.22 * scaleFactor),
+      new THREE.Vector2(0.12 * scaleFactor, 0.25 * scaleFactor),
+      new THREE.Vector2(0, 0.24 * scaleFactor),
+    ];
+    const strawHat = new THREE.Mesh(new THREE.LatheGeometry(hatPts, 36), strawMat);
+    strawHat.position.y = headCenterY + 0.16 * scaleFactor;
+    addOutline(strawHat, 1.025, 0x2a1810);
     const hatBand = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.285 * scaleFactor, 0.285 * scaleFactor, 0.05, 32),
+      new THREE.TorusGeometry(0.285 * scaleFactor, 0.022 * scaleFactor, 12, 36),
       new THREE.MeshPhysicalMaterial({ color: 0xdc2626, roughness: 0.55 })
     );
-    hatBand.position.y = headCenterY + 0.21 * scaleFactor;
-    headPivot.add(hatBrim, hatCrown, hatBand);
+    hatBand.rotation.x = Math.PI / 2;
+    hatBand.position.y = headCenterY + 0.2 * scaleFactor;
+    headPivot.add(strawHat, hatBand);
   } else if (kind === 'doctor') {
     addCurvedHairBangs(4, headCenterY + 0.115 * scaleFactor, headRadius * 0.88, 0.42);
-    const band = new THREE.Mesh(new THREE.TorusGeometry(headRadius * 1.08, 0.016, 14, 34), darkMat);
+    const band = new THREE.Mesh(new THREE.TorusGeometry(headRadius * 1.08, 0.016, 14, 36), darkMat);
     band.rotation.x = Math.PI / 2;
     band.position.y = headCenterY + 0.14 * scaleFactor;
     const mirror = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.075 * scaleFactor, 0.075 * scaleFactor, 0.025, 28),
+      new THREE.CylinderGeometry(0.075 * scaleFactor, 0.075 * scaleFactor, 0.025, 32),
       new THREE.MeshPhysicalMaterial({ color: 0xe2e8f0, metalness: 0.92, roughness: 0.1, clearcoat: 0.9 })
     );
     mirror.rotation.x = Math.PI / 2;
     mirror.position.set(0, headCenterY + 0.15 * scaleFactor, headRadius * 1.08);
     headPivot.add(band, mirror);
   } else if (kind === 'police') {
-    const capTop = new THREE.Mesh(new THREE.CylinderGeometry(0.3 * scaleFactor, 0.26 * scaleFactor, 0.14, 34), pantsMat);
+    const capTop = new THREE.Mesh(new THREE.CylinderGeometry(0.3 * scaleFactor, 0.26 * scaleFactor, 0.14, 36), pantsMat);
     capTop.position.y = headCenterY + 0.23 * scaleFactor;
     addOutline(capTop, 1.025, 0x2a1810);
     const visor = new THREE.Mesh(
@@ -1363,14 +1599,25 @@ function createHumanoidCharacter(
     goldBadge.position.set(0, headCenterY + 0.24 * scaleFactor, 0.28 * scaleFactor);
     headPivot.add(capTop, visor, goldBadge);
   } else if (kind === 'chef') {
-    const band = new THREE.Mesh(new THREE.CylinderGeometry(0.26 * scaleFactor, 0.26 * scaleFactor, 0.14, 34), whiteMat);
+    const band = new THREE.Mesh(new THREE.CylinderGeometry(0.265 * scaleFactor, 0.255 * scaleFactor, 0.14, 36), whiteMat);
     band.position.y = headCenterY + 0.22 * scaleFactor;
     addOutline(band, 1.025, 0x2a1810);
-    const puff = new THREE.Mesh(new THREE.SphereGeometry(0.29 * scaleFactor, 28, 22), whiteMat);
-    puff.scale.set(1.06, 0.85, 1.06);
-    puff.position.y = headCenterY + 0.38 * scaleFactor;
-    addOutline(puff, 1.025, 0x2a1810);
-    headPivot.add(band, puff);
+    // Puffy pleated toque crown made of overlapping smooth spheres
+    const puffCenter = new THREE.Mesh(new THREE.SphereGeometry(0.25 * scaleFactor, 32, 24), whiteMat);
+    puffCenter.scale.set(1.06, 0.88, 1.06);
+    puffCenter.position.y = headCenterY + 0.4 * scaleFactor;
+    addOutline(puffCenter, 1.025, 0x2a1810);
+    headPivot.add(band, puffCenter);
+    for (let i = 0; i < 6; i++) {
+      const a = (i / 6) * Math.PI * 2;
+      const lobe = new THREE.Mesh(new THREE.SphereGeometry(0.145 * scaleFactor, 22, 18), whiteMat);
+      lobe.position.set(
+        Math.cos(a) * 0.15 * scaleFactor,
+        headCenterY + 0.37 * scaleFactor,
+        Math.sin(a) * 0.15 * scaleFactor
+      );
+      headPivot.add(lobe);
+    }
   } else if (kind === 'king' || kind === 'queen' || kind === 'prince' || kind === 'princess') {
     addCurvedHairBangs(4, headCenterY + 0.115 * scaleFactor, headRadius * 0.88, 0.45);
     const isTiara = kind === 'queen' || kind === 'princess';
@@ -1379,7 +1626,7 @@ function createHumanoidCharacter(
     headPivot.add(crown);
     if (kind === 'king') {
       const beard = new THREE.Mesh(
-        new THREE.ConeGeometry(0.18 * scaleFactor, 0.24 * scaleFactor, 24),
+        new THREE.ConeGeometry(0.18 * scaleFactor, 0.24 * scaleFactor, 28),
         new THREE.MeshPhysicalMaterial({ color: 0xe2e8f0, roughness: 0.55, clearcoat: 0.3 })
       );
       beard.rotation.x = Math.PI;
@@ -1390,7 +1637,7 @@ function createHumanoidCharacter(
   } else if (kind === 'angel') {
     addCurvedHairBangs(4, headCenterY + 0.115 * scaleFactor, headRadius * 0.88, 0.45);
     const halo = new THREE.Mesh(
-      new THREE.TorusGeometry(0.2 * scaleFactor, 0.025, 16, 34),
+      new THREE.TorusGeometry(0.2 * scaleFactor, 0.025, 16, 36),
       new THREE.MeshPhysicalMaterial({
         color: 0xfef08a,
         emissive: 0xfacc15,
@@ -1405,7 +1652,7 @@ function createHumanoidCharacter(
   } else if (kind === 'fairy') {
     addCurvedHairBangs(4, headCenterY + 0.115 * scaleFactor, headRadius * 0.88, 0.48);
     const wreath = new THREE.Mesh(
-      new THREE.TorusGeometry(0.25 * scaleFactor, 0.028, 16, 34),
+      new THREE.TorusGeometry(0.25 * scaleFactor, 0.028, 16, 36),
       new THREE.MeshPhysicalMaterial({ color: 0xf472b6, emissive: 0xec4899, emissiveIntensity: 0.4, clearcoat: 0.5 })
     );
     wreath.rotation.x = Math.PI / 2.3;
@@ -1414,24 +1661,56 @@ function createHumanoidCharacter(
   } else if (kind === 'witch' || kind === 'wizard') {
     const hatMat =
       kind === 'witch'
-        ? new THREE.MeshPhysicalMaterial({ color: 0x1e1b4b, map: fabricTex, roughness: 0.4, clearcoat: 0.35 })
+        ? new THREE.MeshPhysicalMaterial({ color: 0x1e1b4b, map: fabricTex, roughness: 0.45, clearcoat: 0.35 })
         : shirtMat;
-    const brim = new THREE.Mesh(new THREE.CylinderGeometry(0.46 * scaleFactor, 0.49 * scaleFactor, 0.035, 36), hatMat);
-    brim.position.y = headCenterY + 0.19 * scaleFactor;
+    // Curved swooped Lathe brim + crooked pointed hat cone
+    const brimPts = [
+      new THREE.Vector2(0.49 * scaleFactor, -0.02 * scaleFactor),
+      new THREE.Vector2(0.36 * scaleFactor, 0.02 * scaleFactor),
+      new THREE.Vector2(0.24 * scaleFactor, 0.03 * scaleFactor),
+      new THREE.Vector2(0, 0.03 * scaleFactor),
+    ];
+    const brim = new THREE.Mesh(new THREE.LatheGeometry(brimPts, 36), hatMat);
+    brim.position.y = headCenterY + 0.185 * scaleFactor;
     addOutline(brim, 1.025, 0x2a1810);
-    const cone = new THREE.Mesh(new THREE.ConeGeometry(0.25 * scaleFactor, 0.52 * scaleFactor, 32), hatMat);
-    cone.position.y = headCenterY + 0.45 * scaleFactor;
-    cone.rotation.z = -0.08;
+
+    const hatCurve = new THREE.CatmullRomCurve3([
+      new THREE.Vector3(0, 0.19 * scaleFactor, 0),
+      new THREE.Vector3(0.02 * scaleFactor, 0.36 * scaleFactor, -0.02 * scaleFactor),
+      new THREE.Vector3(-0.08 * scaleFactor, 0.54 * scaleFactor, -0.06 * scaleFactor),
+      new THREE.Vector3(-0.18 * scaleFactor, 0.66 * scaleFactor, -0.1 * scaleFactor),
+    ]);
+    const coneGeo = new THREE.TubeGeometry(hatCurve, 18, 0.16 * scaleFactor, 24, false);
+    // Taper tube smoothly to pointed tip along curve
+    const cPos = coneGeo.attributes.position;
+    for (let i = 0; i < cPos.count; i++) {
+      const py = cPos.getY(i);
+      const t = Math.max(0, Math.min(1, (py - 0.19 * scaleFactor) / (0.48 * scaleFactor)));
+      const taper = Math.max(0.04, 1.38 * (1 - t * 0.95));
+      const spine = hatCurve.getPoint(t);
+      cPos.setXYZ(
+        i,
+        spine.x + (cPos.getX(i) - spine.x) * taper,
+        py,
+        spine.z + (cPos.getZ(i) - spine.z) * taper
+      );
+    }
+    cPos.needsUpdate = true;
+    coneGeo.computeVertexNormals();
+    const cone = new THREE.Mesh(coneGeo, hatMat);
+    cone.position.y = headCenterY;
     addOutline(cone, 1.025, 0x2a1810);
+
     const buckleBand = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.24 * scaleFactor, 0.25 * scaleFactor, 0.05, 32),
-      new THREE.MeshPhysicalMaterial({ color: 0xfacc15, roughness: 0.3, clearcoat: 0.5 })
+      new THREE.TorusGeometry(0.245 * scaleFactor, 0.026 * scaleFactor, 12, 34),
+      new THREE.MeshPhysicalMaterial({ color: 0xfacc15, roughness: 0.25, metalness: 0.65, clearcoat: 0.55 })
     );
-    buckleBand.position.y = headCenterY + 0.23 * scaleFactor;
+    buckleBand.rotation.x = Math.PI / 2;
+    buckleBand.position.y = headCenterY + 0.22 * scaleFactor;
     headPivot.add(brim, cone, buckleBand);
     if (kind === 'wizard') {
       const longBeard = new THREE.Mesh(
-        new THREE.ConeGeometry(0.2 * scaleFactor, 0.42 * scaleFactor, 24),
+        new THREE.ConeGeometry(0.2 * scaleFactor, 0.42 * scaleFactor, 28),
         hairMat
       );
       longBeard.rotation.x = Math.PI;
@@ -1443,14 +1722,14 @@ function createHumanoidCharacter(
   } else if (kind === 'superhero') {
     addCurvedHairBangs(4, headCenterY + 0.115 * scaleFactor, headRadius * 0.88, 0.45);
     const mask = new THREE.Mesh(
-      makeRoundedBox(0.37 * scaleFactor, 0.095 * scaleFactor, 0.05 * scaleFactor, 0.022),
+      makeOrganicPouchGeo(0.37 * scaleFactor, 0.095 * scaleFactor, 0.06 * scaleFactor, 28),
       darkMat
     );
     mask.position.set(0, eyeY, eyeZ + 0.045 * scaleFactor);
     headPivot.add(mask);
   }
 
-  // Tapered Natural Arms + Forearms + Articulated Cartoon Hands + Hand Mounts
+  // Smooth CapsuleGeometry Upper/Lower Arms + Spherical Elbow Joints + Articulated 3D Hands
   const armMat = kind === 'doctor' || kind === 'chef' || kind === 'angel' ? torsoMat : shirtMat;
   const hasGloves = ['boy', 'teenager', 'police', 'superhero', 'twins'].includes(kind);
   const gloveMat = new THREE.MeshPhysicalMaterial({
@@ -1469,24 +1748,59 @@ function createHumanoidCharacter(
     const shoulder = new THREE.Group();
     shoulder.position.set(side * 0.255 * scaleFactor, 0.04 * scaleFactor + torsoH - 0.065, 0);
 
-    const upperArm = new THREE.Mesh(
-      makeTaperedLimbGeo(0.072 * scaleFactor, 0.063 * scaleFactor, 0.054 * scaleFactor, 0.24 * scaleFactor, 20),
+    const shoulderJoint = new THREE.Mesh(
+      new THREE.SphereGeometry(0.068 * scaleFactor, 24, 18),
       armMat
     );
+    addOutline(shoulderJoint, 1.028);
+    shoulder.add(shoulderJoint);
+
+    const upperArm = new THREE.Mesh(
+      new THREE.CapsuleGeometry(0.056 * scaleFactor, 0.145 * scaleFactor, 12, 24),
+      armMat
+    );
+    upperArm.position.y = -0.115 * scaleFactor;
     addOutline(upperArm, 1.028);
     shoulder.add(upperArm);
-    if (kind !== 'doctor' && kind !== 'chef' && kind !== 'angel') accentMeshes.push(upperArm);
+    if (kind !== 'doctor' && kind !== 'chef' && kind !== 'angel') accentMeshes.push(shoulderJoint, upperArm);
 
     const forearmPivot = new THREE.Group();
-    forearmPivot.position.y = -0.24 * scaleFactor;
+    forearmPivot.position.y = -0.23 * scaleFactor;
     shoulder.add(forearmPivot);
 
-    const forearm = new THREE.Mesh(
-      makeTaperedLimbGeo(0.054 * scaleFactor, 0.048 * scaleFactor, 0.042 * scaleFactor, 0.21 * scaleFactor, 20),
-      kind === 'doctor' || kind === 'chef' || kind === 'angel' ? armMat : skinMat
+    // Spherical elbow joint for seamless bending
+    const forearmMat = kind === 'doctor' || kind === 'chef' || kind === 'angel' ? armMat : skinMat;
+    const elbowJoint = new THREE.Mesh(
+      new THREE.SphereGeometry(0.052 * scaleFactor, 24, 18),
+      forearmMat
     );
+    addOutline(elbowJoint, 1.028);
+    forearmPivot.add(elbowJoint);
+
+    const forearm = new THREE.Mesh(
+      new THREE.CapsuleGeometry(0.046 * scaleFactor, 0.13 * scaleFactor, 12, 24),
+      forearmMat
+    );
+    forearm.position.y = -0.105 * scaleFactor;
     addOutline(forearm, 1.028);
     forearmPivot.add(forearm);
+
+    if (kind === 'father' && side === -1) {
+      // Wristwatch on Father's left wrist
+      const watchStrap = new THREE.Mesh(
+        new THREE.TorusGeometry(0.048 * scaleFactor, 0.011 * scaleFactor, 10, 24),
+        darkMat
+      );
+      watchStrap.rotation.x = Math.PI / 2;
+      watchStrap.position.y = -0.175 * scaleFactor;
+      const watchFace = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.022 * scaleFactor, 0.022 * scaleFactor, 0.012, 20),
+        new THREE.MeshPhysicalMaterial({ color: 0xe2e8f0, metalness: 0.85, roughness: 0.15 })
+      );
+      watchFace.rotation.z = Math.PI / 2;
+      watchFace.position.set(-0.048 * scaleFactor, -0.175 * scaleFactor, 0);
+      forearmPivot.add(watchStrap, watchFace);
+    }
 
     const hand = buildCartoonHand(
       side,
@@ -1496,11 +1810,11 @@ function createHumanoidCharacter(
       gloveCuffMat,
       addOutline
     );
-    hand.position.y = -0.235 * scaleFactor;
+    hand.position.y = -0.225 * scaleFactor;
     forearmPivot.add(hand);
 
     const handMount = new THREE.Group();
-    handMount.position.set(0, -0.245 * scaleFactor, 0.048 * scaleFactor);
+    handMount.position.set(0, -0.235 * scaleFactor, 0.048 * scaleFactor);
     forearmPivot.add(handMount);
 
     bodyPivot.add(shoulder);
@@ -1510,44 +1824,70 @@ function createHumanoidCharacter(
   const leftArm = createArm(-1);
   const rightArm = createArm(1);
 
-  // Tapered Natural Legs + Sculpted Puffy Cartoon Sneakers
+  // Smooth CapsuleGeometry Upper/Lower Legs + Spherical Knee Joints + Laced 3D Sneakers
   const hasCargoPockets = ['boy', 'kid', 'son', 'twins', 'teenager'].includes(kind);
   const shoeSoleMat = new THREE.MeshPhysicalMaterial({ color: 0xf8fafc, roughness: 0.35, clearcoat: 0.4 });
+  const thighLen = (legLen - 0.1 * scaleFactor) * 0.52;
+  const shinLen = (legLen - 0.1 * scaleFactor) * 0.48;
+
   const createLeg = (side: -1 | 1) => {
     const hip = new THREE.Group();
     hip.position.set(side * 0.115 * scaleFactor, 0, 0);
 
-    const legGeo = makeTaperedLimbGeo(
-      0.095 * scaleFactor,
-      0.08 * scaleFactor,
-      0.068 * scaleFactor,
-      legLen - 0.08 * scaleFactor,
-      20
+    const hipJoint = new THREE.Mesh(
+      new THREE.SphereGeometry(0.086 * scaleFactor, 24, 18),
+      pantsMat
     );
-    const thigh = new THREE.Mesh(legGeo, pantsMat);
+    addOutline(hipJoint, 1.026);
+    hip.add(hipJoint);
+
+    const thigh = new THREE.Mesh(
+      new THREE.CapsuleGeometry(0.08 * scaleFactor, Math.max(0.06, thighLen - 0.08 * scaleFactor), 12, 24),
+      pantsMat
+    );
+    thigh.position.y = -thighLen * 0.5;
     addOutline(thigh, 1.026);
     hip.add(thigh);
 
     if (hasCargoPockets) {
       const pocket = new THREE.Mesh(
-        makeRoundedBox(0.045 * scaleFactor, 0.12 * scaleFactor, 0.11 * scaleFactor, 0.015),
+        makeOrganicPouchGeo(0.05 * scaleFactor, 0.11 * scaleFactor, 0.11 * scaleFactor, 20),
         pantsMat
       );
-      pocket.position.set(side * 0.078 * scaleFactor, -0.21 * scaleFactor, 0);
+      pocket.position.set(side * 0.078 * scaleFactor, -thighLen * 0.65, 0);
       addOutline(pocket, 1.028);
       hip.add(pocket);
     }
 
+    const kneePivot = new THREE.Group();
+    kneePivot.position.y = -thighLen;
+    hip.add(kneePivot);
+
+    const kneeJoint = new THREE.Mesh(
+      new THREE.SphereGeometry(0.072 * scaleFactor, 24, 18),
+      pantsMat
+    );
+    addOutline(kneeJoint, 1.026);
+    kneePivot.add(kneeJoint);
+
+    const shin = new THREE.Mesh(
+      new THREE.CapsuleGeometry(0.068 * scaleFactor, Math.max(0.05, shinLen - 0.06 * scaleFactor), 12, 24),
+      pantsMat
+    );
+    shin.position.y = -shinLen * 0.5;
+    addOutline(shin, 1.026);
+    kneePivot.add(shin);
+
     const shoe = buildCartoonSneaker(scaleFactor, shoeMat, shoeSoleMat, shirtMat, addOutline);
-    shoe.position.set(0, -legLen, 0);
-    hip.add(shoe);
+    shoe.position.set(0, -shinLen - 0.1 * scaleFactor, 0);
+    kneePivot.add(shoe);
 
     bodyPivot.add(hip);
-    return hip;
+    return { hip, kneePivot };
   };
 
-  const leftLegPivot = createLeg(-1);
-  const rightLegPivot = createLeg(1);
+  const leftLeg = createLeg(-1);
+  const rightLeg = createLeg(1);
 
   const headHeight =
     baseBodyY +
@@ -1577,8 +1917,10 @@ function createHumanoidCharacter(
     rightForearmPivot: rightArm.forearmPivot,
     leftHandMount: leftArm.handMount,
     rightHandMount: rightArm.handMount,
-    leftLegPivot,
-    rightLegPivot,
+    leftLegPivot: leftLeg.hip,
+    rightLegPivot: rightLeg.hip,
+    leftKneePivot: leftLeg.kneePivot,
+    rightKneePivot: rightLeg.kneePivot,
     leftWingPivot,
     rightWingPivot,
     ponytailPivot,
@@ -1640,22 +1982,25 @@ function createRobotCharacter(accentColor: string): CharacterRig {
   bodyPivot.position.y = baseBodyY;
   root.add(bodyPivot);
 
-  const torso = new THREE.Mesh(makeRoundedBox(0.54, 0.54, 0.38, 0.12), shellMat);
-  torso.position.y = 0.34;
+  const torso = new THREE.Mesh(
+    makeTaperedTorsoGeo(0.56, 0.56, 0.4, 36),
+    shellMat
+  );
+  torso.position.y = 0.08;
   addOutline(torso, 1.025, 0x111827);
   bodyPivot.add(torso);
 
   // Glowing cyan chest core bezel + orb
   const chestBezel = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.14, 0.05, 36), jointMat);
   chestBezel.rotation.x = Math.PI / 2;
-  chestBezel.position.set(0, 0.36, 0.175);
+  chestBezel.position.set(0, 0.36, 0.185);
   const chestCore = new THREE.Mesh(new THREE.CylinderGeometry(0.105, 0.105, 0.06, 36), glowMat);
   chestCore.rotation.x = Math.PI / 2;
-  chestCore.position.set(0, 0.36, 0.18);
+  chestCore.position.set(0, 0.36, 0.19);
   bodyPivot.add(chestBezel, chestCore);
   accentMeshes.push(chestCore);
 
-  const waist = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.19, 0.14, 32), jointMat);
+  const waist = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.19, 0.14, 36), jointMat);
   waist.position.y = 0.06;
   bodyPivot.add(waist);
 
@@ -1663,18 +2008,18 @@ function createRobotCharacter(accentColor: string): CharacterRig {
   headPivot.position.y = 0.64;
   bodyPivot.add(headPivot);
 
-  const headBox = new THREE.Mesh(makeRoundedBox(0.56, 0.42, 0.4, 0.13), shellMat);
+  const headBox = new THREE.Mesh(makeOrganicPouchGeo(0.58, 0.44, 0.44, 40), shellMat);
   headBox.position.y = 0.23;
   addOutline(headBox, 1.025, 0x111827);
   headPivot.add(headBox);
 
-  const visor = new THREE.Mesh(makeRoundedBox(0.42, 0.22, 0.07, 0.05), visorMat);
-  visor.position.set(0, 0.24, 0.175);
+  const visor = new THREE.Mesh(makeOrganicPouchGeo(0.43, 0.22, 0.14, 32), visorMat);
+  visor.position.set(0, 0.24, 0.165);
   headPivot.add(visor);
 
   // Side Ear Pods
   [-1, 1].forEach((side) => {
-    const earPod = new THREE.Mesh(new THREE.CylinderGeometry(0.095, 0.095, 0.06, 32), glowMat);
+    const earPod = new THREE.Mesh(new THREE.CylinderGeometry(0.095, 0.095, 0.06, 36), glowMat);
     earPod.rotation.z = Math.PI / 2;
     earPod.position.set(side * 0.295, 0.23, 0);
     addOutline(earPod, 1.028, 0x111827);
@@ -1697,7 +2042,7 @@ function createRobotCharacter(accentColor: string): CharacterRig {
 
   const makeBotEye = (x: number) => {
     const eg = new THREE.Group();
-    eg.position.set(x, 0.25, 0.205);
+    eg.position.set(x, 0.25, 0.22);
     const eyeSphere = new THREE.Mesh(new THREE.SphereGeometry(0.062, 32, 24), robotEyeMat);
     eyeSphere.scale.set(1, 1.05, 0.35);
     eyeSphere.rotation.y = -Math.PI / 2;
@@ -1713,22 +2058,23 @@ function createRobotCharacter(accentColor: string): CharacterRig {
   const leftEye = makeBotEye(-0.1);
   const rightEye = makeBotEye(0.1);
 
-  const browGeo = new THREE.BoxGeometry(0.09, 0.018, 0.02);
+  const browGeo = new THREE.CapsuleGeometry(0.01, 0.072, 8, 16);
+  browGeo.rotateZ(Math.PI / 2);
   const leftBrow = new THREE.Mesh(browGeo, glowMat);
-  leftBrow.position.set(-0.1, 0.325, 0.212);
+  leftBrow.position.set(-0.1, 0.328, 0.224);
   const rightBrow = new THREE.Mesh(browGeo, glowMat);
-  rightBrow.position.set(0.1, 0.325, 0.212);
+  rightBrow.position.set(0.1, 0.328, 0.224);
 
   headPivot.add(leftBrow, rightBrow);
   accentMeshes.push(leftBrow, rightBrow);
 
   // Cute Orange Smiling Beak Mouth
-  const mouthMesh = new THREE.Mesh(makeRoundedBox(0.12, 0.048, 0.04, 0.018), orangeBeakMat);
-  mouthMesh.position.set(0, 0.16, 0.205);
+  const mouthMesh = new THREE.Mesh(makeOrganicPouchGeo(0.12, 0.048, 0.06, 24), orangeBeakMat);
+  mouthMesh.position.set(0, 0.16, 0.215);
   headPivot.add(mouthMesh);
 
   // Antenna + Glowing Diamond Crystal
-  const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.022, 0.16, 20), jointMat);
+  const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.022, 0.16, 24), jointMat);
   stem.position.y = 0.51;
   const bulb = new THREE.Mesh(new THREE.OctahedronGeometry(0.065, 0), glowMat);
   bulb.position.y = 0.62;
@@ -1740,27 +2086,29 @@ function createRobotCharacter(accentColor: string): CharacterRig {
     shoulder.position.set(side * 0.33, 0.52, 0);
 
     shoulder.add(new THREE.Mesh(new THREE.SphereGeometry(0.076, 24, 18), jointMat));
-    const upper = new THREE.Mesh(makeTaperedLimbGeo(0.068, 0.058, 0.048, 0.24, 20), shellMat);
+    const upper = new THREE.Mesh(new THREE.CapsuleGeometry(0.056, 0.135, 12, 24), shellMat);
+    upper.position.y = -0.115;
     addOutline(upper, 1.025, 0x111827);
     shoulder.add(upper);
 
     const forearmPivot = new THREE.Group();
-    forearmPivot.position.y = -0.25;
+    forearmPivot.position.y = -0.24;
     shoulder.add(forearmPivot);
 
-    forearmPivot.add(new THREE.Mesh(new THREE.SphereGeometry(0.06, 20, 16), jointMat));
-    const lower = new THREE.Mesh(makeTaperedLimbGeo(0.052, 0.046, 0.04, 0.21, 20), shellMat);
+    forearmPivot.add(new THREE.Mesh(new THREE.SphereGeometry(0.058, 24, 18), jointMat));
+    const lower = new THREE.Mesh(new THREE.CapsuleGeometry(0.046, 0.12, 12, 24), shellMat);
+    lower.position.y = -0.1;
     addOutline(lower, 1.025, 0x111827);
     forearmPivot.add(lower);
 
     const claw = buildCartoonHand(side, 0.98, jointMat, false, glowMat, (m, t) =>
       addOutline(m, t ?? 1.025, 0x111827)
     );
-    claw.position.y = -0.235;
+    claw.position.y = -0.22;
     forearmPivot.add(claw);
 
     const handMount = new THREE.Group();
-    handMount.position.set(0, -0.25, 0.05);
+    handMount.position.set(0, -0.235, 0.05);
     forearmPivot.add(handMount);
 
     bodyPivot.add(shoulder);
@@ -1774,23 +2122,34 @@ function createRobotCharacter(accentColor: string): CharacterRig {
     const hip = new THREE.Group();
     hip.position.set(side * 0.14, 0, 0);
 
-    hip.add(new THREE.Mesh(new THREE.SphereGeometry(0.072, 20, 16), jointMat));
-    const shin = new THREE.Mesh(makeTaperedLimbGeo(0.088, 0.074, 0.064, 0.43, 20), shellMat);
+    hip.add(new THREE.Mesh(new THREE.SphereGeometry(0.074, 24, 18), jointMat));
+    const upperLeg = new THREE.Mesh(new THREE.CapsuleGeometry(0.078, 0.13, 12, 24), shellMat);
+    upperLeg.position.y = -0.11;
+    addOutline(upperLeg, 1.025, 0x111827);
+    hip.add(upperLeg);
+
+    const kneePivot = new THREE.Group();
+    kneePivot.position.y = -0.22;
+    hip.add(kneePivot);
+
+    kneePivot.add(new THREE.Mesh(new THREE.SphereGeometry(0.068, 24, 18), jointMat));
+    const shin = new THREE.Mesh(new THREE.CapsuleGeometry(0.068, 0.12, 12, 24), shellMat);
+    shin.position.y = -0.1;
     addOutline(shin, 1.025, 0x111827);
-    hip.add(shin);
+    kneePivot.add(shin);
 
     const foot = buildCartoonSneaker(1.02, jointMat, shellMat, glowMat, (m, t) =>
       addOutline(m, t ?? 1.025, 0x111827)
     );
-    foot.position.set(0, -baseBodyY, 0);
-    hip.add(foot);
+    foot.position.set(0, -baseBodyY + 0.22, 0);
+    kneePivot.add(foot);
 
     bodyPivot.add(hip);
-    return hip;
+    return { hip, kneePivot };
   };
 
-  const leftLegPivot = makeRobotLeg(-1);
-  const rightLegPivot = makeRobotLeg(1);
+  const leftLeg = makeRobotLeg(-1);
+  const rightLeg = makeRobotLeg(1);
 
   const headHeight = 1.85;
   const selectionRing = createSelectionRing();
@@ -1816,8 +2175,10 @@ function createRobotCharacter(accentColor: string): CharacterRig {
     rightForearmPivot: rightArm.forearmPivot,
     leftHandMount: leftArm.handMount,
     rightHandMount: rightArm.handMount,
-    leftLegPivot,
-    rightLegPivot,
+    leftLegPivot: leftLeg.hip,
+    rightLegPivot: rightLeg.hip,
+    leftKneePivot: leftLeg.kneePivot,
+    rightKneePivot: rightLeg.kneePivot,
     selectionRing,
     speechSprite,
     lastDialogue: '',
@@ -1870,6 +2231,8 @@ export function updateCharacterAnimation(
   let rLegX = 0;
   let lLegZ = 0;
   let rLegZ = 0;
+  let lKneeX = 0;
+  let rKneeX = 0;
   let mouthScaleY = 1;
   let mouthScaleX = 1;
 
@@ -1918,6 +2281,8 @@ export function updateCharacterAnimation(
       bodyRotX = 0.06;
       lLegX = swing * 0.62;
       rLegX = -swing * 0.62;
+      lKneeX = Math.max(0.05, swing * 0.55);
+      rKneeX = Math.max(0.05, -swing * 0.55);
       lArmX = -swing * 0.48;
       rArmX = swing * 0.48;
       lForeX = -0.25;
@@ -1935,6 +2300,8 @@ export function updateCharacterAnimation(
       bodyRotX = isChase ? 0.3 : 0.18;
       lLegX = swing * (isChase ? 1.08 : 0.92);
       rLegX = -swing * (isChase ? 1.08 : 0.92);
+      lKneeX = Math.max(0.12, swing * 0.95);
+      rKneeX = Math.max(0.12, -swing * 0.95);
       lArmX = -swing * (isChase ? 1.05 : 0.85);
       rArmX = swing * (isChase ? 1.05 : 0.85);
       lForeX = -1.05;
@@ -2109,9 +2476,11 @@ export function updateCharacterAnimation(
     }
 
     case 'Sit': {
-      bodyY = rig.baseBodyY - 0.28;
-      lLegX = -1.38;
-      rLegX = -1.38;
+      bodyY = rig.baseBodyY - 0.32;
+      lLegX = -1.42;
+      rLegX = -1.42;
+      lKneeX = 1.32;
+      rKneeX = 1.32;
       lArmX = -0.42;
       rArmX = -0.42;
       lForeX = -0.35;
@@ -2125,8 +2494,10 @@ export function updateCharacterAnimation(
       bodyY = rig.baseBodyY + air * 0.68;
       lArmZ = 0.25 + air * 1.45;
       rArmZ = -0.25 - air * 1.45;
-      lLegX = -air * 0.35;
+      lLegX = -air * 0.42;
       rLegX = air * 0.25;
+      lKneeX = air * 0.58;
+      rKneeX = air * 0.48;
       headRotX -= air * 0.12;
       break;
     }
@@ -2272,6 +2643,12 @@ export function updateCharacterAnimation(
   rig.rightLegPivot.rotation.x = THREE.MathUtils.lerp(rig.rightLegPivot.rotation.x, rLegX, k);
   rig.leftLegPivot.rotation.z = THREE.MathUtils.lerp(rig.leftLegPivot.rotation.z, lLegZ, k);
   rig.rightLegPivot.rotation.z = THREE.MathUtils.lerp(rig.rightLegPivot.rotation.z, rLegZ, k);
+  if (rig.leftKneePivot) {
+    rig.leftKneePivot.rotation.x = THREE.MathUtils.lerp(rig.leftKneePivot.rotation.x, lKneeX, k);
+  }
+  if (rig.rightKneePivot) {
+    rig.rightKneePivot.rotation.x = THREE.MathUtils.lerp(rig.rightKneePivot.rotation.x, rKneeX, k);
+  }
 
   rig.mouthMesh.scale.y = THREE.MathUtils.lerp(rig.mouthMesh.scale.y, mouthScaleY, Math.min(1, k * 2.2));
   rig.mouthMesh.scale.x = THREE.MathUtils.lerp(rig.mouthMesh.scale.x, mouthScaleX, k);
