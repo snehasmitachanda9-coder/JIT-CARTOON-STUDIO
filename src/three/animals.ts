@@ -57,6 +57,7 @@ function createSelectionRing(): THREE.Mesh {
   const mesh = new THREE.Mesh(geo, mat);
   mesh.position.y = 0.025;
   mesh.visible = false;
+  mesh.raycast = () => {};
   return mesh;
 }
 
@@ -71,6 +72,7 @@ function createContactShadow(radius = 0.5): THREE.Mesh {
   });
   const mesh = new THREE.Mesh(geo, mat);
   mesh.position.y = 0.015;
+  mesh.raycast = () => {};
   return mesh;
 }
 
@@ -132,7 +134,7 @@ function enableShadows(group: THREE.Object3D): void {
   });
 }
 
-function addOutline(mesh: THREE.Mesh, thickness = 1.04, colorHex = 0x24140c): void {
+function addOutline(mesh: THREE.Mesh, thickness = 1.022, colorHex = 0x2a1810): void {
   mesh.add(createCartoonOutline(mesh, thickness, colorHex));
 }
 

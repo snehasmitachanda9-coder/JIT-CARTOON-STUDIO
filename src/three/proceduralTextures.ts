@@ -18,7 +18,7 @@ function configureColorTexture(
 
 const outlineMaterialCache = new Map<number, THREE.MeshBasicMaterial>();
 
-export function getSharedOutlineMaterial(colorHex = 0x24140c): THREE.MeshBasicMaterial {
+export function getSharedOutlineMaterial(colorHex = 0x2a1810): THREE.MeshBasicMaterial {
   let mat = outlineMaterialCache.get(colorHex);
   if (!mat) {
     mat = new THREE.MeshBasicMaterial({
@@ -33,8 +33,8 @@ export function getSharedOutlineMaterial(colorHex = 0x24140c): THREE.MeshBasicMa
 
 export function createCartoonOutline(
   sourceMesh: THREE.Mesh,
-  thickness = 1.036,
-  colorHex = 0x24140c
+  thickness = 1.022,
+  colorHex = 0x2a1810
 ): THREE.Mesh {
   const outline = new THREE.Mesh(sourceMesh.geometry, getSharedOutlineMaterial(colorHex));
   outline.scale.setScalar(thickness);
@@ -168,39 +168,268 @@ export function createEyeIrisTexture(irisHex: string): THREE.CanvasTexture {
   return tex;
 }
 
+const faceTextureCache = new Map<string, THREE.CanvasTexture>();
+
+export function createChibiFaceTexture(
+  skinHex: number,
+  irisHex: string,
+  hasFreckles = false,
+  isFemale = false,
+  maxAnisotropy = 4
+): THREE.CanvasTexture {
+  const key = `${skinHex.toString(16)}_${irisHex.toLowerCase()}_${hasFreckles ? 1 : 0}_${isFemale ? 1 : 0}`;
+  const cached = faceTextureCache.get(key);
+  if (cached) return cached;
+
+  const canvas = document.createElement('canvas');
+  canvas.width = 1024;
+  canvas.height = 1024;
+  const ctx = canvas.getContext('2d')!;
+
+  const baseSkin = new THREE.Color(skinHex);
+  const warmSkin = baseSkin.clone().offsetHSL(-0.01, 0.08, 0.05).getStyle();
+  const shadowSkin = baseSkin.clone().offsetHSL(-0.015, 0.06, -0.09).getStyle();
+  const peachBlush = baseSkin.clone().lerp(new THREE.Color(0xfb7185), 0.45).getStyle();
+
+  // Base warm skin fill
+  ctx.fillStyle = baseSkin.getStyle();
+  ctx.fillRect(0, 0, 1024, 1024);
+
+  // Soft subsurface glow across the front face (x=512, y=512)
+  const faceGlow = ctx.createRadialGradient(512, 495, 24, 512, 520, 260);
+  faceGlow.addColorStop(0, warmSkin);
+  faceGlow.addColorStop(0.65, baseSkin.getStyle());
+  faceGlow.addColorStop(1, shadowSkin);
+  ctx.fillStyle = faceGlow;
+  ctx.fillRect(0, 0, 1024, 1024);
+
+  // Note: On SphereGeometry equirectangular UV, 1 unit of U spans 2*PI while 1 unit of V spans PI.
+  // Scaling horizontal offsets/radii by 0.5 around x=512 produces true circular features on the 3D sphere!
+  const cx = 512;
+
+  // Rosy gradient cheeks
+  [-1, 1].forEach((side) => {
+    const cheekX = cx + side * 86;
+    const cheekY = 588;
+    ctx.save();
+    ctx.translate(cheekX, cheekY);
+    ctx.scale(0.55, 1);
+    const cg = ctx.createRadialGradient(0, 0, 6, 0, 0, 64);
+    cg.addColorStop(0, 'rgba(251, 113, 133, 0.52)');
+    cg.addColorStop(0.55, 'rgba(251, 113, 133, 0.22)');
+    cg.addColorStop(1, 'rgba(251, 113, 133, 0)');
+    ctx.fillStyle = cg;
+    ctx.beginPath();
+    ctx.arc(0, 0, 64, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+
+    if (hasFreckles) {
+      ctx.fillStyle = 'rgba(180, 83, 55, 0.48)';
+      [
+        [-10, -8],
+        [4, -14],
+        [14, -3],
+        [-2, 6],
+      ].forEach(([fx, fy]) => {
+        ctx.beginPath();
+        ctx.ellipse(cheekX + fx * 0.5, cheekY + fy, 2.2, 4.2, 0, 0, Math.PI * 2);
+        ctx.fill();
+      });
+    }
+  });
+
+  // Soft nose bridge highlight & warm tip blush
+  ctx.save();
+  ctx.translate(cx, 540);
+  ctx.scale(0.5, 1);
+  const noseGrad = ctx.createRadialGradient(0, 6, 3, 0, 0, 32);
+  noseGrad.addColorStop(0, peachBlush);
+  noseGrad.addColorStop(0.55, 'rgba(255, 228, 210, 0.35)');
+  noseGrad.addColorStop(1, 'rgba(255, 228, 210, 0)');
+  ctx.fillStyle = noseGrad;
+  ctx.beginPath();
+  ctx.arc(0, 0, 32, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+
+  // Large Expressive Chibi-Pixar Eyes painted cleanly onto the 1024x1024 head texture
+  const irisBase = new THREE.Color(irisHex);
+  const irisBright = irisBase.clone().offsetHSL(0.02, 0.1, 0.2).getStyle();
+  const irisMid = irisBase.getStyle();
+  const irisRim = irisBase.clone().multiplyScalar(0.32).getStyle();
+
+  [-1, 1].forEach((side) => {
+    const eyeX = cx + side * 56;
+    const eyeY = 482;
+
+    ctx.save();
+    ctx.translate(eyeX, eyeY);
+    // Equirectangular X-compression so eyes stay round-oval on the 3D head
+    ctx.scale(0.5, 1);
+
+    // Subtle warm eye-socket ambient occlusion
+    const socketGrad = ctx.createRadialGradient(0, -6, 36, 0, 0, 102);
+    socketGrad.addColorStop(0, 'rgba(130, 68, 42, 0.26)');
+    socketGrad.addColorStop(1, 'rgba(130, 68, 42, 0)');
+    ctx.fillStyle = socketGrad;
+    ctx.beginPath();
+    ctx.arc(0, 0, 102, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Crisp white sclera oval with subtle upper lid shadow
+    ctx.save();
+    ctx.beginPath();
+    ctx.ellipse(0, 0, 74, 82, 0, 0, Math.PI * 2);
+    ctx.clip();
+
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(-85, -90, 170, 180);
+
+    // Upper sclera soft shadow
+    const scleraShade = ctx.createLinearGradient(0, -82, 0, -28);
+    scleraShade.addColorStop(0, 'rgba(148, 163, 184, 0.38)');
+    scleraShade.addColorStop(1, 'rgba(255, 255, 255, 0)');
+    ctx.fillStyle = scleraShade;
+    ctx.fillRect(-85, -85, 170, 62);
+
+    // Multi-tone gradient iris slightly inward for warm Pixar gaze
+    const gazeX = side * -5;
+    const gazeY = 2;
+    const ig = ctx.createRadialGradient(gazeX, gazeY + 12, 12, gazeX, gazeY, 56);
+    ig.addColorStop(0, irisBright);
+    ig.addColorStop(0.55, irisMid);
+    ig.addColorStop(0.86, irisRim);
+    ig.addColorStop(1, '#180e09');
+    ctx.fillStyle = ig;
+    ctx.beginPath();
+    ctx.ellipse(gazeX, gazeY, 54, 58, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Delicate iris radial fibers
+    ctx.save();
+    ctx.translate(gazeX, gazeY);
+    for (let f = 0; f < 32; f++) {
+      ctx.rotate((Math.PI * 2) / 32);
+      ctx.strokeStyle = f % 2 === 0 ? 'rgba(255,255,255,0.18)' : 'rgba(0,0,0,0.15)';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(24, 0);
+      ctx.lineTo(50, 0);
+      ctx.stroke();
+    }
+    ctx.restore();
+
+    // Deep glossy pupil
+    ctx.fillStyle = '#090b10';
+    ctx.beginPath();
+    ctx.ellipse(gazeX, gazeY, 27, 30, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Bottom iris bounce arc
+    const bounce = ctx.createRadialGradient(gazeX, gazeY + 34, 4, gazeX, gazeY + 34, 34);
+    bounce.addColorStop(0, 'rgba(255,255,255,0.52)');
+    bounce.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = bounce;
+    ctx.beginPath();
+    ctx.arc(gazeX, gazeY, 54, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Dual crisp white sparkle catchlights
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath();
+    ctx.ellipse(gazeX - 18, gazeY - 22, 13, 11, -0.35, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.94)';
+    ctx.beginPath();
+    ctx.arc(gazeX + 18, gazeY + 18, 6.5, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.restore();
+
+    // Dark lower contour rim
+    ctx.strokeStyle = '#2a1810';
+    ctx.lineWidth = 3.5;
+    ctx.beginPath();
+    ctx.ellipse(0, 0, 74, 82, 0, 0.15, Math.PI - 0.15);
+    ctx.stroke();
+
+    // Thick expressive curved upper eyelashes
+    ctx.strokeStyle = '#1b0f0a';
+    ctx.lineWidth = isFemale ? 12 : 9;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.ellipse(0, -2, 76, 84, 0, Math.PI + 0.18, Math.PI * 2 - 0.18);
+    ctx.stroke();
+
+    if (isFemale) {
+      // Cute outer lash wings
+      ctx.lineWidth = 7;
+      for (let w = 0; w < 2; w++) {
+        ctx.beginPath();
+        ctx.moveTo(side * (66 - w * 12), -36 - w * 14);
+        ctx.quadraticCurveTo(side * (86 - w * 10), -46 - w * 16, side * (96 - w * 12), -56 - w * 16);
+        ctx.stroke();
+      }
+    }
+
+    ctx.restore();
+  });
+
+  // Soft smile contour shadow around mouth area
+  ctx.save();
+  ctx.translate(cx, 622);
+  ctx.scale(0.5, 1);
+  ctx.strokeStyle = 'rgba(140, 62, 48, 0.25)';
+  ctx.lineWidth = 5;
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.arc(0, -14, 48, 0.35, Math.PI - 0.35);
+  ctx.stroke();
+  ctx.restore();
+
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = maxAnisotropy;
+  tex.needsUpdate = true;
+  tex.userData.sharedResource = true;
+  faceTextureCache.set(key, tex);
+  return tex;
+}
+
 export function createGrassTexture(maxAnisotropy = 4): THREE.CanvasTexture {
   const canvas = document.createElement('canvas');
   canvas.width = 512;
   canvas.height = 512;
   const ctx = canvas.getContext('2d')!;
 
-  ctx.fillStyle = '#4cb944';
+  ctx.fillStyle = '#15803d';
   ctx.fillRect(0, 0, 512, 512);
 
-  // Soft sunlit meadow patches
-  for (let i = 0; i < 360; i++) {
+  // Soft sunlit emerald meadow patches
+  for (let i = 0; i < 380; i++) {
     const x = (Math.sin(i * 12.9898) * 0.5 + 0.5) * 512;
     const y = (Math.cos(i * 78.233) * 0.5 + 0.5) * 512;
-    const r = 14 + (i % 24);
+    const r = 16 + (i % 26);
     ctx.fillStyle =
       i % 3 === 0
-        ? 'rgba(134, 239, 172, 0.2)'
+        ? 'rgba(34, 197, 94, 0.28)'
         : i % 3 === 1
-          ? 'rgba(34, 139, 34, 0.16)'
-          : 'rgba(190, 242, 100, 0.14)';
+          ? 'rgba(22, 163, 74, 0.26)'
+          : 'rgba(74, 222, 128, 0.2)';
     ctx.beginPath();
     ctx.arc(x, y, r, 0, Math.PI * 2);
     ctx.fill();
   }
 
   // Stylized grass blade tufts
-  for (let i = 0; i < 650; i++) {
-    const x = ((i * 73) % 512);
-    const y = ((i * 137) % 512);
-    const h = 8 + (i % 10);
+  for (let i = 0; i < 720; i++) {
+    const x = (i * 73) % 512;
+    const y = (i * 137) % 512;
+    const h = 9 + (i % 10);
     const lean = ((i % 5) - 2) * 2.5;
-    ctx.strokeStyle = i % 2 === 0 ? 'rgba(163, 230, 53, 0.45)' : 'rgba(21, 128, 61, 0.38)';
-    ctx.lineWidth = 2;
+    ctx.strokeStyle = i % 2 === 0 ? 'rgba(74, 222, 128, 0.48)' : 'rgba(20, 83, 45, 0.45)';
+    ctx.lineWidth = 2.2;
     ctx.lineCap = 'round';
     ctx.beginPath();
     ctx.moveTo(x, y);
@@ -208,7 +437,163 @@ export function createGrassTexture(maxAnisotropy = 4): THREE.CanvasTexture {
     ctx.stroke();
   }
 
+  // Tiny painted wildflowers scattered cleanly across the meadow
+  const petalCols = ['#fef08a', '#f472b6', '#ffffff', '#fb923c', '#c084fc'];
+  for (let i = 0; i < 42; i++) {
+    const fx = ((i * 193 + 37) % 480) + 16;
+    const fy = ((i * 263 + 53) % 480) + 16;
+    ctx.fillStyle = petalCols[i % petalCols.length];
+    for (let p = 0; p < 5; p++) {
+      const a = (p / 5) * Math.PI * 2;
+      ctx.beginPath();
+      ctx.arc(fx + Math.cos(a) * 3.5, fy + Math.sin(a) * 3.5, 2.5, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.fillStyle = '#f59e0b';
+    ctx.beginPath();
+    ctx.arc(fx, fy, 2, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
   return configureColorTexture(canvas, 9, 9, maxAnisotropy);
+}
+
+export function createBrickStoneTexture(maxAnisotropy = 4): THREE.CanvasTexture {
+  const canvas = document.createElement('canvas');
+  canvas.width = 512;
+  canvas.height = 512;
+  const ctx = canvas.getContext('2d')!;
+
+  // High-brightness neutral warm plaster mortar so material.color tints cleanly
+  ctx.fillStyle = '#ebe5dc';
+  ctx.fillRect(0, 0, 512, 512);
+
+  const rows = 8;
+  const cols = 4;
+  const rowH = 512 / rows;
+  const colW = 512 / cols;
+
+  for (let r = 0; r < rows; r++) {
+    const offset = r % 2 === 0 ? 0 : colW * 0.5;
+    for (let c = -1; c <= cols; c++) {
+      const bx = c * colW + offset;
+      const by = r * rowH;
+      const shade = 232 + ((r * 13 + c * 29) % 20);
+      ctx.fillStyle = `rgb(${shade}, ${shade - 4}, ${shade - 9})`;
+      ctx.beginPath();
+      ctx.roundRect(bx + 4, by + 4, colW - 8, rowH - 8, 8);
+      ctx.fill();
+
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.45)';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+
+      ctx.fillStyle = 'rgba(130, 118, 102, 0.16)';
+      ctx.fillRect(bx + 10, by + rowH - 10, colW - 20, 4);
+    }
+  }
+
+  return configureColorTexture(canvas, 2, 2, maxAnisotropy);
+}
+
+export function createRoofTileTexture(maxAnisotropy = 4): THREE.CanvasTexture {
+  const canvas = document.createElement('canvas');
+  canvas.width = 512;
+  canvas.height = 512;
+  const ctx = canvas.getContext('2d')!;
+
+  // Neutral white-grey shingle base so roof material.color tints richly
+  ctx.fillStyle = '#dcdcdc';
+  ctx.fillRect(0, 0, 512, 512);
+
+  const rows = 8;
+  const cols = 8;
+  const rowH = 512 / rows;
+  const colW = 512 / cols;
+
+  for (let r = 0; r < rows; r++) {
+    const offset = r % 2 === 0 ? 0 : colW * 0.5;
+    for (let c = -1; c <= cols; c++) {
+      const tx = c * colW + offset;
+      const ty = r * rowH;
+      const v = 224 + ((r * 19 + c * 11) % 26);
+      ctx.fillStyle = `rgb(${v}, ${v}, ${v})`;
+      ctx.beginPath();
+      ctx.roundRect(tx + 2, ty + 2, colW - 4, rowH - 2, [4, 4, 18, 18]);
+      ctx.fill();
+
+      ctx.strokeStyle = 'rgba(40, 30, 25, 0.28)';
+      ctx.lineWidth = 2.5;
+      ctx.stroke();
+    }
+  }
+
+  return configureColorTexture(canvas, 3, 2, maxAnisotropy);
+}
+
+export function createWaterRippleTexture(maxAnisotropy = 4): THREE.CanvasTexture {
+  const canvas = document.createElement('canvas');
+  canvas.width = 512;
+  canvas.height = 512;
+  const ctx = canvas.getContext('2d')!;
+
+  const grad = ctx.createLinearGradient(0, 0, 512, 512);
+  grad.addColorStop(0, '#0ea5e9');
+  grad.addColorStop(0.5, '#38bdf8');
+  grad.addColorStop(1, '#0284c7');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, 512, 512);
+
+  // Sparkling caustic wave bands & sunlit highlights
+  ctx.strokeStyle = 'rgba(224, 242, 254, 0.45)';
+  ctx.lineWidth = 4;
+  for (let i = 0; i < 18; i++) {
+    const y = (i / 18) * 512;
+    ctx.beginPath();
+    for (let x = 0; x <= 512; x += 16) {
+      const wy = y + Math.sin((x / 512) * Math.PI * 4 + i) * 10;
+      if (x === 0) ctx.moveTo(x, wy);
+      else ctx.lineTo(x, wy);
+    }
+    ctx.stroke();
+  }
+
+  for (let i = 0; i < 90; i++) {
+    const x = (i * 89) % 512;
+    const y = (i * 149) % 512;
+    const r = 3 + (i % 6);
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.55)';
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  return configureColorTexture(canvas, 4, 2, maxAnisotropy);
+}
+
+export function createMarbleTexture(maxAnisotropy = 4): THREE.CanvasTexture {
+  const canvas = document.createElement('canvas');
+  canvas.width = 512;
+  canvas.height = 512;
+  const ctx = canvas.getContext('2d')!;
+
+  ctx.fillStyle = '#f4f6f9';
+  ctx.fillRect(0, 0, 512, 512);
+
+  ctx.strokeStyle = 'rgba(148, 163, 184, 0.34)';
+  ctx.lineWidth = 3;
+  for (let v = 0; v < 12; v++) {
+    ctx.beginPath();
+    let y = (v * 47) % 512;
+    ctx.moveTo(0, y);
+    for (let x = 32; x <= 512; x += 32) {
+      y += Math.sin(x * 0.03 + v) * 14;
+      ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+  }
+
+  return configureColorTexture(canvas, 3, 3, maxAnisotropy);
 }
 
 export function createWoodPlankTexture(maxAnisotropy = 4): THREE.CanvasTexture {

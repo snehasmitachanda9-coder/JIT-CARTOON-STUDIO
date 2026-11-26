@@ -102,8 +102,11 @@ interface StudioViewportProps {
   aspectRatio: AspectRatioMode;
   isPlaying: boolean;
   sceneProgress: number; // 0..1 within active scene
+  sceneDuration: number;
   baseCameraPose: CameraPose;
   cameraZoom: CameraZoomMode;
+  cameraStartTime?: number;
+  cameraEndTime?: number;
   cameraPoseTrigger: { pose: CameraPose; seq: number } | null;
   pickingWalkTargetForId: string | null;
   audioManager: StudioAudioManager;
@@ -122,8 +125,11 @@ export const StudioViewport = forwardRef<StudioViewportHandle, StudioViewportPro
       aspectRatio,
       isPlaying,
       sceneProgress,
+      sceneDuration,
       baseCameraPose,
       cameraZoom,
+      cameraStartTime,
+      cameraEndTime,
       cameraPoseTrigger,
       pickingWalkTargetForId,
       audioManager,
@@ -147,8 +153,11 @@ export const StudioViewport = forwardRef<StudioViewportHandle, StudioViewportPro
       aspectRatio,
       isPlaying,
       sceneProgress,
+      sceneDuration,
       baseCameraPose,
       cameraZoom,
+      cameraStartTime,
+      cameraEndTime,
       pickingWalkTargetForId,
       onSelectActor,
       onMoveActor,
@@ -161,8 +170,11 @@ export const StudioViewport = forwardRef<StudioViewportHandle, StudioViewportPro
       aspectRatio,
       isPlaying,
       sceneProgress,
+      sceneDuration,
       baseCameraPose,
       cameraZoom,
+      cameraStartTime,
+      cameraEndTime,
       pickingWalkTargetForId,
       onSelectActor,
       onMoveActor,
@@ -260,7 +272,7 @@ export const StudioViewport = forwardRef<StudioViewportHandle, StudioViewportPro
         const recorder = preferredMime
           ? new MediaRecorder(combinedStream, {
               mimeType: preferredMime,
-              videoBitsPerSecond: inst.isSoftwareGl ? 6_000_000 : 12_000_000,
+              videoBitsPerSecond: inst.isSoftwareGl ? 8_000_000 : 10_000_000,
             })
           : new MediaRecorder(combinedStream);
 
@@ -307,14 +319,14 @@ export const StudioViewport = forwardRef<StudioViewportHandle, StudioViewportPro
 
       const isSoftwareGl = detectSoftwareGl();
       const renderer = new THREE.WebGLRenderer({
-        antialias: !isSoftwareGl,
+        antialias: true,
         powerPreference: 'high-performance',
         preserveDrawingBuffer: true,
       });
       renderer.outputColorSpace = THREE.SRGBColorSpace;
       renderer.toneMapping = THREE.ACESFilmicToneMapping;
       renderer.toneMappingExposure = 1.12;
-      renderer.setPixelRatio(isSoftwareGl ? 1 : Math.min(window.devicePixelRatio, 2));
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
       renderer.shadowMap.enabled = !isSoftwareGl;
       renderer.shadowMap.type = THREE.PCFSoftShadowMap;
       renderer.domElement.style.width = '100%';
@@ -341,9 +353,10 @@ export const StudioViewport = forwardRef<StudioViewportHandle, StudioViewportPro
       const pmremGenerator = new THREE.PMREMGenerator(renderer);
       const envTex = pmremGenerator.fromScene(new RoomEnvironment(), 0.04).texture;
       scene.environment = envTex;
+      scene.environmentIntensity = 0.32;
       pmremGenerator.dispose();
 
-      const camera = new THREE.PerspectiveCamera(44, 16 / 9, 0.1, 160);
+      const camera = new THREE.PerspectiveCamera(40, 16 / 9, 0.1, 160);
       const initCam = ENVIRONMENT_META.village.defaultCamera;
       camera.position.set(...initCam.position);
 
@@ -351,21 +364,21 @@ export const StudioViewport = forwardRef<StudioViewportHandle, StudioViewportPro
       controls.target.set(...initCam.target);
       controls.enableDamping = !isSoftwareGl;
       controls.dampingFactor = 0.07;
-      controls.minDistance = 2.6;
+      controls.minDistance = 2.0;
       controls.maxDistance = 24;
       controls.maxPolarAngle = Math.PI / 2 - 0.04;
       controls.minPolarAngle = 0.12;
       controls.update();
 
-      const hemiLight = new THREE.HemisphereLight(0x60a5fa, 0x4ade80, 1.05);
+      const hemiLight = new THREE.HemisphereLight(0x38bdf8, 0x166534, 0.75);
       hemiLight.position.set(0, 20, 0);
       scene.add(hemiLight);
 
-      const keyLight = new THREE.DirectionalLight(0xfff4d6, 2.1);
-      keyLight.position.set(8, 14, 9);
+      const keyLight = new THREE.DirectionalLight(0xfff4d6, 2.3);
+      keyLight.position.set(8, 14, 10);
       keyLight.castShadow = !isSoftwareGl;
-      keyLight.shadow.mapSize.width = isSoftwareGl ? 512 : 2048;
-      keyLight.shadow.mapSize.height = isSoftwareGl ? 512 : 2048;
+      keyLight.shadow.mapSize.width = 2048;
+      keyLight.shadow.mapSize.height = 2048;
       keyLight.shadow.radius = 2.5;
       keyLight.shadow.camera.near = 1;
       keyLight.shadow.camera.far = 38;
@@ -373,12 +386,12 @@ export const StudioViewport = forwardRef<StudioViewportHandle, StudioViewportPro
       keyLight.shadow.camera.right = 12;
       keyLight.shadow.camera.top = 12;
       keyLight.shadow.camera.bottom = -12;
-      keyLight.shadow.bias = -0.0004;
+      keyLight.shadow.bias = -0.0005;
       keyLight.shadow.normalBias = 0.02;
       scene.add(keyLight);
 
-      const rimLight = new THREE.DirectionalLight(0xfef08a, 0.95);
-      rimLight.position.set(-8, 7, -9);
+      const rimLight = new THREE.DirectionalLight(0x93c5fd, 1.0);
+      rimLight.position.set(-7, 8, -10);
       scene.add(rimLight);
 
       // Walk Path Helper Visuals (only visible in edit mode)
@@ -481,6 +494,7 @@ export const StudioViewport = forwardRef<StudioViewportHandle, StudioViewportPro
 
         // If user is picking Point B for Walk Path, tap ground to set destination
         if (propsRef.current.pickingWalkTargetForId) {
+          ev.stopImmediatePropagation();
           if (raycaster.ray.intersectPlane(_groundPlane, _hitPoint)) {
             const nx = THREE.MathUtils.clamp(_hitPoint.x, -7.8, 7.8);
             const nz = THREE.MathUtils.clamp(_hitPoint.z, -6.5, 6.5);
@@ -500,6 +514,7 @@ export const StudioViewport = forwardRef<StudioViewportHandle, StudioViewportPro
         if (hits.length > 0) {
           const hitId = findActorIdFromObject(hits[0].object);
           if (hitId) {
+            ev.stopImmediatePropagation();
             draggingId = hitId;
             controls.enabled = false;
             propsRef.current.onSelectActor(hitId);
@@ -566,7 +581,7 @@ export const StudioViewport = forwardRef<StudioViewportHandle, StudioViewportPro
         }
       };
 
-      renderer.domElement.addEventListener('pointerdown', onPointerDown);
+      renderer.domElement.addEventListener('pointerdown', onPointerDown, { capture: true });
       renderer.domElement.addEventListener('pointermove', onPointerMove);
       renderer.domElement.addEventListener('pointerup', onPointerUp);
       renderer.domElement.addEventListener('pointercancel', onPointerUp);
@@ -609,9 +624,19 @@ export const StudioViewport = forwardRef<StudioViewportHandle, StudioViewportPro
           const {
             isPlaying: playing,
             sceneProgress: sProg,
+            sceneDuration: sDur,
             baseCameraPose: baseCam,
             cameraZoom: zoomMode,
+            cameraStartTime: camStartRaw,
+            cameraEndTime: camEndRaw,
           } = propsRef.current;
+
+          const safeDur = Math.max(0.5, sDur || 6);
+          const sceneTime = sProg * safeDur;
+          const camStart = camStartRaw ?? 0;
+          const camEnd = camEndRaw ?? safeDur;
+          const camSpan = Math.max(0.2, camEnd - camStart);
+          const camProg = THREE.MathUtils.clamp((sceneTime - camStart) / camSpan, 0, 1);
 
           if (playing && zoomMode !== 'none') {
             _camGoalTarget.set(...baseCam.target);
@@ -619,8 +644,8 @@ export const StudioViewport = forwardRef<StudioViewportHandle, StudioViewportPro
             _zoomDir.copy(_camGoalPos).sub(_camGoalTarget);
             const zoomFactor =
               zoomMode === 'zoomIn'
-                ? THREE.MathUtils.lerp(1.0, 0.62, sProg)
-                : THREE.MathUtils.lerp(0.7, 1.25, sProg);
+                ? THREE.MathUtils.lerp(1.0, 0.62, camProg)
+                : THREE.MathUtils.lerp(0.7, 1.25, camProg);
             _camGoalPos.copy(_camGoalTarget).addScaledVector(_zoomDir, zoomFactor);
             const k = 1 - Math.exp(-5.0 * delta);
             camera.position.lerp(_camGoalPos, k);
@@ -659,27 +684,49 @@ export const StudioViewport = forwardRef<StudioViewportHandle, StudioViewportPro
 
           inst.rigs.forEach((entry) => {
             const { actor } = entry;
-            let activeAnim = actor.animation;
+            const actStart = actor.startTime ?? 0;
+            const actEnd = actor.endTime ?? safeDur;
+            const actInWindow = !playing || (sceneTime >= actStart && sceneTime <= actEnd);
+            const actProg = THREE.MathUtils.clamp(
+              (sceneTime - actStart) / Math.max(0.2, actEnd - actStart),
+              0,
+              1
+            );
+
+            let activeAnim: AnimationState = actInWindow ? actor.animation : 'Idle';
 
             // Walk / Chase / Drive / Flight Path Point A -> Point B interpolation during playback
             if (playing && actor.walkPath?.enabled) {
               const [ax, az] = actor.walkPath.start;
               const [bx, bz] = actor.walkPath.end;
-              const px = THREE.MathUtils.lerp(ax, bx, sProg);
-              const pz = THREE.MathUtils.lerp(az, bz, sProg);
+              const px = THREE.MathUtils.lerp(ax, bx, actProg);
+              const pz = THREE.MathUtils.lerp(az, bz, actProg);
               entry.rig.root.position.set(px, 0, pz);
               const dx = bx - ax;
               const dz = bz - az;
               if (Math.hypot(dx, dz) > 0.05) {
                 entry.rig.root.rotation.y = Math.atan2(dx, dz);
               }
-              if (!travelAnims.includes(actor.animation)) {
+              if (actInWindow && !travelAnims.includes(actor.animation)) {
                 activeAnim = actor.actorType === 'vehicle' ? 'Drive/Ride Forward' : 'Walk';
               }
             }
 
+            const propStart = actor.propStartTime ?? 0;
+            const propEnd = actor.propEndTime ?? safeDur;
+            const propInWindow = !playing || (sceneTime >= propStart && sceneTime <= propEnd);
+            if (entry.kindTag === 'character') {
+              if (entry.rig.leftItemObj) entry.rig.leftItemObj.visible = propInWindow;
+              if (entry.rig.rightItemObj) entry.rig.rightItemObj.visible = propInWindow;
+            }
+
             const hasDialogue = actor.dialogue.trim().length > 0;
-            const autoLipSync = playing && hasDialogue;
+            const voiceStart = actor.voiceStartTime ?? 0;
+            const voiceEnd = actor.voiceEndTime ?? safeDur;
+            const voiceInWindow = !playing || (sceneTime >= voiceStart && sceneTime <= voiceEnd);
+            entry.rig.speechSprite.visible = hasDialogue && voiceInWindow;
+
+            const autoLipSync = playing && hasDialogue && voiceInWindow;
 
             if (entry.kindTag === 'character') {
               updateCharacterAnimation(
@@ -737,7 +784,7 @@ export const StudioViewport = forwardRef<StudioViewportHandle, StudioViewportPro
         resizeObserver.disconnect();
         controls.removeEventListener('start', onControlStart);
         controls.dispose();
-        renderer.domElement.removeEventListener('pointerdown', onPointerDown);
+        renderer.domElement.removeEventListener('pointerdown', onPointerDown, { capture: true });
         renderer.domElement.removeEventListener('pointermove', onPointerMove);
         renderer.domElement.removeEventListener('pointerup', onPointerUp);
         renderer.domElement.removeEventListener('pointercancel', onPointerUp);

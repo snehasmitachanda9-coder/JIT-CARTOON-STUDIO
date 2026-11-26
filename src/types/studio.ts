@@ -234,6 +234,12 @@ export interface SceneActor {
   audio?: SceneAudioTrack | null;
   heldItemLeft?: HeldItemAttachment | null;
   heldItemRight?: HeldItemAttachment | null;
+  startTime?: number;
+  endTime?: number;
+  propStartTime?: number;
+  propEndTime?: number;
+  voiceStartTime?: number;
+  voiceEndTime?: number;
 }
 
 export interface SceneData {
@@ -245,6 +251,8 @@ export interface SceneData {
   cameraPose: CameraPose;
   cameraPreset?: CameraPresetId;
   cameraZoom: CameraZoomMode;
+  cameraStartTime?: number;
+  cameraEndTime?: number;
   actors: SceneActor[];
   audio: SceneAudioTrack | null;
 }
@@ -264,32 +272,32 @@ export const ENVIRONMENT_META: Record<
   village: {
     label: 'Green Village',
     subtitle: 'River swim zone, bridge & cottages',
-    defaultCamera: { position: [0, 4.4, 9.8], target: [0, 1.1, 0] },
+    defaultCamera: { position: [0, 2.0, 5.8], target: [0, 1.2, 0] },
   },
   classroom: {
     label: 'School Classroom',
     subtitle: 'Chalkboard, desks & windows',
-    defaultCamera: { position: [0.4, 3.6, 8.2], target: [0, 1.2, -0.5] },
+    defaultCamera: { position: [0.15, 2.0, 5.6], target: [0, 1.2, -0.7] },
   },
   park: {
     label: 'City Park & Sports',
     subtitle: 'Fountain, sports pitch & skyline',
-    defaultCamera: { position: [2.2, 4.2, 9.6], target: [0, 1.1, 0] },
+    defaultCamera: { position: [0.4, 2.0, 5.8], target: [0, 1.2, 0] },
   },
   palace: {
     label: 'Royal Palace Hall',
     subtitle: 'Throne, marble floor & golden pillars',
-    defaultCamera: { position: [0, 3.8, 9.2], target: [0, 1.3, -1.2] },
+    defaultCamera: { position: [0, 2.05, 5.8], target: [0, 1.2, -0.4] },
   },
   forest: {
     label: 'Night Forest',
     subtitle: 'Campfire, pines & glowing flora',
-    defaultCamera: { position: [-1.5, 4.0, 9.4], target: [0, 1.1, -0.4] },
+    defaultCamera: { position: [-0.3, 2.0, 5.8], target: [0, 1.2, -0.2] },
   },
   studio: {
     label: 'Studio Stage',
     subtitle: 'Cyclorama, truss & spotlights',
-    defaultCamera: { position: [0, 3.3, 8.4], target: [0, 1.1, 0] },
+    defaultCamera: { position: [0, 2.0, 5.7], target: [0, 1.2, 0] },
   },
 };
 
@@ -299,19 +307,19 @@ export const CAMERA_PRESETS: Record<
 > = {
   wide: {
     label: 'Wide Shot',
-    pose: { position: [0, 4.5, 10.2], target: [0, 1.1, 0] },
+    pose: { position: [0, 2.0, 5.8], target: [0, 1.2, 0] },
   },
   closeup: {
     label: 'Close-Up',
-    pose: { position: [0.4, 1.85, 3.8], target: [0, 1.35, 0] },
+    pose: { position: [0.2, 1.72, 3.2], target: [0, 1.32, 0] },
   },
   overShoulder: {
     label: 'Over-Shoulder',
-    pose: { position: [-2.6, 2.35, 4.4], target: [0.9, 1.25, -0.6] },
+    pose: { position: [-2.1, 2.0, 3.9], target: [0.7, 1.2, -0.3] },
   },
   top: {
     label: 'Top View',
-    pose: { position: [0, 12.5, 2.4], target: [0, 0, 0] },
+    pose: { position: [0, 10.5, 2.3], target: [0, 0, 0] },
   },
 };
 

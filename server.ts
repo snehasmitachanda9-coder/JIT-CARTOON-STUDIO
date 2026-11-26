@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import express from 'express';
 import fs from 'fs';
+import http from 'http';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { GoogleGenAI, Type } from '@google/genai';
@@ -46,6 +47,7 @@ async function generateWithFallback(
 
 async function startServer() {
   const app = express();
+  const httpServer = http.createServer(app);
   app.use(express.json({ limit: '1mb' }));
 
   app.get('/api/health', (_req, res) => {
@@ -269,7 +271,12 @@ Place 2 to 4 actors per scene on ground coordinates X in [-3.5, 3.5], Z in [-2.5
   if (process.env.NODE_ENV !== 'production') {
     const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
-      server: { middlewareMode: true },
+      server: {
+        middlewareMode: true,
+        allowedHosts: true,
+        hmr: { server: httpServer },
+        ws: { server: httpServer },
+      },
       appType: 'spa',
     });
     app.use(vite.middlewares);
@@ -287,7 +294,7 @@ Place 2 to 4 actors per scene on ground coordinates X in [-3.5, 3.5], Z in [-2.5
   }
 
   const port = Number(process.env.PORT || 3000);
-  app.listen(port, '0.0.0.0', () => {
+  httpServer.listen(port, '0.0.0.0', () => {
     console.log(`JIT 3D Cartoon Studio server running on http://0.0.0.0:${port}`);
   });
 }

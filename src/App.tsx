@@ -10,6 +10,7 @@ import {
   WifiOff,
 } from 'lucide-react';
 import {
+  ActivityModalHeldSelection,
   ActivityPickerTarget,
   ActivitySelectorModal,
 } from './components/ActivitySelectorModal';
@@ -19,7 +20,7 @@ import {
   InspectorPanel,
   InspectorTab,
 } from './components/InspectorPanel';
-import { TimelineBar } from './components/TimelineBar';
+import { ActorTrackField, TimelineBar } from './components/TimelineBar';
 import { TopHeader } from './components/TopHeader';
 import { useOnlineStatus } from './hooks/useOnlineStatus';
 import { StudioViewport, StudioViewportHandle } from './three/StudioViewport';
@@ -631,6 +632,13 @@ export default function App() {
     []
   );
 
+  const handleSelectActor = useCallback((id: string | null) => {
+    setSelectedActorId(id);
+    if (id) {
+      setActiveTab('cast');
+    }
+  }, []);
+
   const handleOpenUpdateActivity = useCallback((actor: SceneActor) => {
     setActivityModalTarget({
       mode: 'update',
@@ -639,11 +647,13 @@ export default function App() {
       kind: actor.kind,
       label: actor.name,
       currentAnimation: actor.animation,
+      heldItemLeft: actor.heldItemLeft ?? null,
+      heldItemRight: actor.heldItemRight ?? null,
     });
   }, []);
 
   const handleConfirmActivityFromModal = useCallback(
-    (activity: AnimationState) => {
+    (activity: AnimationState, heldSelection?: ActivityModalHeldSelection) => {
       const target = activityModalTarget;
       if (!target) return;
 
@@ -654,7 +664,18 @@ export default function App() {
               ? {
                   ...s,
                   actors: s.actors.map((a) =>
-                    a.id === target.actorId ? { ...a, animation: activity } : a
+                    a.id === target.actorId
+                      ? {
+                          ...a,
+                          animation: activity,
+                          ...(heldSelection
+                            ? {
+                                heldItemLeft: heldSelection.left ?? null,
+                                heldItemRight: heldSelection.right ?? null,
+                              }
+                            : {}),
+                        }
+                      : a
                   ),
                 }
               : s
@@ -666,17 +687,20 @@ export default function App() {
 
       const [bx, bz] = computeNextSpawnPos();
       const autoRightHand =
-        target.actorType === 'character'
-          ? activity === 'Reading Books'
-            ? { itemKind: 'book' as HandheldItemKind, label: 'Book', scale: 1, rotationDeg: 0, offsetY: 0, offsetZ: 0 }
-            : activity === 'Using Mobile Phone'
-              ? { itemKind: 'phone' as HandheldItemKind, label: 'Mobile Phone', scale: 1, rotationDeg: 0, offsetY: 0, offsetZ: 0 }
-              : activity === 'Playing Cricket'
-                ? { itemKind: 'cricketBat' as HandheldItemKind, label: 'Cricket Bat', scale: 1, rotationDeg: 0, offsetY: 0, offsetZ: 0 }
-                : activity === 'Magic Spell Cast'
-                  ? { itemKind: 'magicWand' as HandheldItemKind, label: 'Magic Wand', scale: 1, rotationDeg: 0, offsetY: 0, offsetZ: 0 }
-                  : null
-          : null;
+        heldSelection?.right !== undefined
+          ? heldSelection.right
+          : target.actorType === 'character'
+            ? activity === 'Reading Books'
+              ? { itemKind: 'book' as HandheldItemKind, label: 'Book', scale: 1, rotationDeg: 0, offsetY: 0, offsetZ: 0 }
+              : activity === 'Using Mobile Phone'
+                ? { itemKind: 'phone' as HandheldItemKind, label: 'Mobile Phone', scale: 1, rotationDeg: 0, offsetY: 0, offsetZ: 0 }
+                : activity === 'Playing Cricket'
+                  ? { itemKind: 'cricketBat' as HandheldItemKind, label: 'Cricket Bat', scale: 1, rotationDeg: 0, offsetY: 0, offsetZ: 0 }
+                  : activity === 'Magic Spell Cast'
+                    ? { itemKind: 'magicWand' as HandheldItemKind, label: 'Magic Wand', scale: 1, rotationDeg: 0, offsetY: 0, offsetZ: 0 }
+                    : null
+            : null;
+      const autoLeftHand = heldSelection?.left ?? null;
 
       // Spawn Twins as a synchronized side-by-side pair
       if (target.actorType === 'character' && target.kind === 'twins') {
@@ -693,6 +717,7 @@ export default function App() {
           expression: 'Happy',
           dialogue: '',
           accentColor: pairColors[0],
+          heldItemLeft: autoLeftHand,
           heldItemRight: autoRightHand,
           audio: null,
         };
@@ -708,6 +733,7 @@ export default function App() {
           expression: 'Happy',
           dialogue: '',
           accentColor: pairColors[1],
+          heldItemLeft: autoLeftHand,
           heldItemRight: autoRightHand,
           audio: null,
         };
@@ -758,6 +784,7 @@ export default function App() {
         expression: 'Happy',
         dialogue: '',
         accentColor: defaultColor,
+        heldItemLeft: autoLeftHand,
         heldItemRight: autoRightHand,
         audio: null,
       };
@@ -977,6 +1004,42 @@ export default function App() {
       );
     },
     [commitScenes]
+  );
+
+  const handleUpdateActorTiming = useCallback(
+    (
+      actorId: string,
+      field: ActorTrackField,
+      startTime: number,
+      endTime: number
+    ) => {
+      setScenesRaw((prev) =>
+        prev.map((s) => {
+          if (s.id !== activeSceneId) return s;
+          return {
+            ...s,
+            actors: s.actors.map((a) => {
+              if (a.id !== actorId) return a;
+              if (field === 'activity') return { ...a, startTime, endTime };
+              if (field === 'prop') return { ...a, propStartTime: startTime, propEndTime: endTime };
+              return { ...a, voiceStartTime: startTime, voiceEndTime: endTime };
+            }),
+          };
+        })
+      );
+    },
+    [activeSceneId]
+  );
+
+  const handleUpdateSceneCameraTiming = useCallback(
+    (sceneId: string, cameraStartTime: number, cameraEndTime: number) => {
+      setScenesRaw((prev) =>
+        prev.map((s) =>
+          s.id === sceneId ? { ...s, cameraStartTime, cameraEndTime } : s
+        )
+      );
+    },
+    []
   );
 
   // Playback Controls
@@ -1511,10 +1574,41 @@ export default function App() {
               </span>
             </div>
 
-            {noticeText && (
+            {noticeText ? (
               <span className="text-xs text-amber-300 truncate max-w-[200px] sm:max-w-sm">
                 {noticeText}
               </span>
+            ) : (
+              (() => {
+                const sel = activeScene.actors.find((a) => a.id === selectedActorId);
+                if (!sel) return null;
+                return (
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <span className="hidden sm:inline text-xs text-amber-300 font-medium truncate max-w-[110px]">
+                      {sel.name}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => handleOpenUpdateActivity(sel)}
+                      className="px-2 py-1 rounded-md bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/40 text-[11px] font-medium text-amber-300 cursor-pointer whitespace-nowrap"
+                    >
+                      Activity
+                    </button>
+                    {sel.actorType === 'character' && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setActiveTab('cast');
+                          setMobileSheetOpen(true);
+                        }}
+                        className="md:hidden px-2 py-1 rounded-md bg-sky-500/15 hover:bg-sky-500/25 border border-sky-400/40 text-[11px] font-medium text-sky-200 cursor-pointer whitespace-nowrap"
+                      >
+                        Hand Prop
+                      </button>
+                    )}
+                  </div>
+                );
+              })()
             )}
           </div>
 
@@ -1528,12 +1622,15 @@ export default function App() {
             aspectRatio={aspectRatio}
             isPlaying={isPlaying}
             sceneProgress={sceneProgress}
+            sceneDuration={activeScene.duration}
             baseCameraPose={activeScene.cameraPose}
             cameraZoom={activeScene.cameraZoom}
+            cameraStartTime={activeScene.cameraStartTime}
+            cameraEndTime={activeScene.cameraEndTime}
             cameraPoseTrigger={cameraPoseTrigger}
             pickingWalkTargetForId={pickingWalkTargetForId}
             audioManager={audioManagerRef.current}
-            onSelectActor={setSelectedActorId}
+            onSelectActor={handleSelectActor}
             onMoveActor={handleMoveActor}
             onPickWalkTarget={handlePickWalkTarget}
           />
@@ -1560,7 +1657,7 @@ export default function App() {
           onOpenLibraryPicker={handleOpenLibraryPicker}
           onOpenUpdateActivity={handleOpenUpdateActivity}
           onDeleteCustomModel={handleDeleteCustomModel}
-          onSelectActor={setSelectedActorId}
+          onSelectActor={handleSelectActor}
           onUpdateActor={handleUpdateActor}
           onDuplicateActor={handleDuplicateActor}
           onDeleteActor={handleDeleteActor}
@@ -1579,16 +1676,20 @@ export default function App() {
       <TimelineBar
         scenes={scenes}
         activeSceneId={activeScene.id}
+        selectedActorId={selectedActorId}
         isPlaying={isPlaying}
         storyElapsed={storyElapsed}
         totalDuration={totalDuration}
         onSelectScene={handleSelectScene}
+        onSelectActor={handleSelectActor}
         onScrubTimeline={handleScrubTimeline}
         onAddScene={handleAddScene}
         onDuplicateScene={handleDuplicateScene}
         onReorderScene={handleReorderScene}
         onDeleteScene={handleDeleteScene}
         onUpdateSceneDuration={handleUpdateSceneDuration}
+        onUpdateActorTiming={handleUpdateActorTiming}
+        onUpdateSceneCameraTiming={handleUpdateSceneCameraTiming}
         onTogglePlayStory={handleTogglePlayStory}
         onStopPlayback={handleStopPlayback}
       />

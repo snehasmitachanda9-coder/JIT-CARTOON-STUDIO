@@ -1,13 +1,17 @@
 import * as THREE from 'three';
 import { EnvironmentId, LightingMode } from '../types/studio';
 import {
+  createBrickStoneTexture,
   createCartoonOutline,
   createChalkboardTexture,
   createCobbleTexture,
   createGrassTexture,
+  createMarbleTexture,
   createRockTexture,
+  createRoofTileTexture,
   createSkyDomeTexture,
   createWaterfallTexture,
+  createWaterRippleTexture,
   createWoodPlankTexture,
 } from './proceduralTextures';
 
@@ -37,35 +41,62 @@ function createSkyDome(
   return new THREE.Mesh(geo, mat);
 }
 
+function createCloudCluster(scale = 1): THREE.Group {
+  const cloud = new THREE.Group();
+  const cloudMat = new THREE.MeshPhysicalMaterial({
+    color: 0xffffff,
+    emissive: 0xe0f2fe,
+    emissiveIntensity: 0.12,
+    roughness: 0.9,
+    clearcoat: 0.05,
+    fog: false,
+  });
+  [
+    [0, 0, 0, 1.35],
+    [-1.15, -0.15, 0.2, 0.98],
+    [1.2, -0.12, -0.15, 1.05],
+    [-0.45, 0.55, -0.1, 0.92],
+    [0.55, 0.45, 0.2, 0.85],
+  ].forEach(([cx, cy, cz, r]) => {
+    const puff = new THREE.Mesh(new THREE.SphereGeometry(r * scale, 24, 16), cloudMat);
+    puff.scale.set(1.25, 0.78, 0.95);
+    puff.position.set(cx * scale, cy * scale, cz * scale);
+    cloud.add(puff);
+  });
+  return cloud;
+}
+
 function createCartoonTree(scale = 1, hueShift = 0): THREE.Group {
   const tree = new THREE.Group();
 
   const trunkMat = new THREE.MeshPhysicalMaterial({ color: 0x7c4a2d, roughness: 0.85, metalness: 0.02 });
-  const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.16 * scale, 0.26 * scale, 1.35 * scale, 10), trunkMat);
+  const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.16 * scale, 0.26 * scale, 1.35 * scale, 20), trunkMat);
   trunk.position.y = 0.675 * scale;
   trunk.castShadow = true;
   trunk.receiveShadow = true;
-  trunk.add(createCartoonOutline(trunk, 1.04, 0x24140c));
+  trunk.add(createCartoonOutline(trunk, 1.025, 0x2a1810));
   tree.add(trunk);
 
   const leafColor = new THREE.Color(0x3cb84b).offsetHSL(hueShift, 0, 0);
   const leafColor2 = new THREE.Color(0x58cc54).offsetHSL(hueShift, 0, 0);
-  const leafMat1 = new THREE.MeshPhysicalMaterial({ color: leafColor, roughness: 0.72, clearcoat: 0.14 });
-  const leafMat2 = new THREE.MeshPhysicalMaterial({ color: leafColor2, roughness: 0.68, clearcoat: 0.18 });
+  const leafMat1 = new THREE.MeshPhysicalMaterial({ color: leafColor, roughness: 0.7, clearcoat: 0.16 });
+  const leafMat2 = new THREE.MeshPhysicalMaterial({ color: leafColor2, roughness: 0.65, clearcoat: 0.2 });
 
-  const puff1 = new THREE.Mesh(new THREE.SphereGeometry(0.85 * scale, 14, 12), leafMat1);
+  const puff1 = new THREE.Mesh(new THREE.SphereGeometry(0.86 * scale, 32, 24), leafMat1);
   puff1.position.set(0, 1.65 * scale, 0);
-  const puff2 = new THREE.Mesh(new THREE.SphereGeometry(0.65 * scale, 14, 12), leafMat2);
-  puff2.position.set(-0.45 * scale, 1.45 * scale, 0.25 * scale);
-  const puff3 = new THREE.Mesh(new THREE.SphereGeometry(0.62 * scale, 14, 12), leafMat2);
-  puff3.position.set(0.42 * scale, 1.5 * scale, -0.2 * scale);
-  const puff4 = new THREE.Mesh(new THREE.SphereGeometry(0.55 * scale, 12, 10), leafMat1);
-  puff4.position.set(0, 2.2 * scale, 0.1 * scale);
+  const puff2 = new THREE.Mesh(new THREE.SphereGeometry(0.66 * scale, 28, 20), leafMat2);
+  puff2.position.set(-0.46 * scale, 1.45 * scale, 0.26 * scale);
+  const puff3 = new THREE.Mesh(new THREE.SphereGeometry(0.64 * scale, 28, 20), leafMat2);
+  puff3.position.set(0.44 * scale, 1.5 * scale, -0.22 * scale);
+  const puff4 = new THREE.Mesh(new THREE.SphereGeometry(0.58 * scale, 28, 20), leafMat1);
+  puff4.position.set(0, 2.22 * scale, 0.1 * scale);
+  const puff5 = new THREE.Mesh(new THREE.SphereGeometry(0.54 * scale, 24, 18), leafMat2);
+  puff5.position.set(-0.15 * scale, 1.85 * scale, -0.4 * scale);
 
-  [puff1, puff2, puff3, puff4].forEach((p) => {
+  [puff1, puff2, puff3, puff4, puff5].forEach((p) => {
     p.castShadow = true;
     p.receiveShadow = true;
-    p.add(createCartoonOutline(p, 1.028, 0x1b3a1a));
+    p.add(createCartoonOutline(p, 1.024, 0x1b3a1a));
     tree.add(p);
   });
 
@@ -75,7 +106,7 @@ function createCartoonTree(scale = 1, hueShift = 0): THREE.Group {
 function createPineTree(scale = 1): THREE.Group {
   const tree = new THREE.Group();
   const trunk = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.14 * scale, 0.24 * scale, 1.3 * scale, 10),
+    new THREE.CylinderGeometry(0.14 * scale, 0.24 * scale, 1.3 * scale, 20),
     new THREE.MeshStandardMaterial({ color: 0x5c3621, roughness: 0.9 })
   );
   trunk.position.y = 0.65 * scale;
@@ -84,7 +115,7 @@ function createPineTree(scale = 1): THREE.Group {
   const pineMat = new THREE.MeshStandardMaterial({ color: 0x166534, roughness: 0.85 });
   [0, 1, 2].forEach((tier) => {
     const cone = new THREE.Mesh(
-      new THREE.ConeGeometry((1.05 - tier * 0.22) * scale, (1.15 - tier * 0.12) * scale, 12),
+      new THREE.ConeGeometry((1.05 - tier * 0.22) * scale, (1.15 - tier * 0.12) * scale, 24),
       pineMat
     );
     cone.position.y = (1.55 + tier * 0.68) * scale;
@@ -95,48 +126,64 @@ function createPineTree(scale = 1): THREE.Group {
   return tree;
 }
 
-function createCottage(roofColor: number, wallColor: number): THREE.Group {
+function createCottage(roofColor: number, wallColor: number, maxAnisotropy = 4): THREE.Group {
   const house = new THREE.Group();
 
-  const baseMat = new THREE.MeshStandardMaterial({ color: 0x64748b, roughness: 0.9 });
-  const wallMat = new THREE.MeshStandardMaterial({ color: wallColor, roughness: 0.82 });
-  const roofMat = new THREE.MeshStandardMaterial({ color: roofColor, roughness: 0.62 });
-  const woodMat = new THREE.MeshStandardMaterial({ color: 0x78350f, roughness: 0.78 });
-  const glassMat = new THREE.MeshStandardMaterial({
+  const brickTex = createBrickStoneTexture(maxAnisotropy);
+  const roofTex = createRoofTileTexture(maxAnisotropy);
+  const woodTex = createWoodPlankTexture(maxAnisotropy);
+  const cobbleTex = createCobbleTexture(maxAnisotropy);
+
+  const baseMat = new THREE.MeshPhysicalMaterial({ map: cobbleTex, color: 0xcbd5e1, roughness: 0.85 });
+  const wallMat = new THREE.MeshPhysicalMaterial({ map: brickTex, color: wallColor, roughness: 0.78 });
+  const roofMat = new THREE.MeshPhysicalMaterial({ map: roofTex, color: roofColor, roughness: 0.56, clearcoat: 0.2 });
+  const woodMat = new THREE.MeshPhysicalMaterial({ map: woodTex, color: 0x9a5b2c, roughness: 0.72 });
+  const glassMat = new THREE.MeshPhysicalMaterial({
     color: 0xfef08a,
     emissive: 0xfde047,
-    emissiveIntensity: 0.35,
-    roughness: 0.2,
-    metalness: 0.15,
+    emissiveIntensity: 0.62,
+    roughness: 0.14,
+    clearcoat: 0.85,
   });
 
   const plinth = new THREE.Mesh(new THREE.BoxGeometry(3.2, 0.28, 2.6), baseMat);
   plinth.position.y = 0.14;
   const walls = new THREE.Mesh(new THREE.BoxGeometry(3.0, 2.0, 2.4), wallMat);
   walls.position.y = 1.28;
+  walls.add(createCartoonOutline(walls, 1.018, 0x2a1810));
   const roof = new THREE.Mesh(new THREE.ConeGeometry(2.55, 1.45, 4), roofMat);
   roof.rotation.y = Math.PI / 4;
   roof.scale.set(1.15, 1, 0.95);
   roof.position.y = 2.98;
+  roof.add(createCartoonOutline(roof, 1.022, 0x2a1810));
   const chimney = new THREE.Mesh(new THREE.BoxGeometry(0.38, 1.0, 0.38), baseMat);
   chimney.position.set(0.85, 3.15, -0.45);
   const door = new THREE.Mesh(new THREE.BoxGeometry(0.62, 1.15, 0.12), woodMat);
   door.position.set(0, 0.85, 1.22);
+  const knob = new THREE.Mesh(
+    new THREE.SphereGeometry(0.04, 16, 12),
+    new THREE.MeshPhysicalMaterial({ color: 0xfacc15, metalness: 0.85, roughness: 0.18 })
+  );
+  knob.position.set(0.18, 0.84, 1.29);
   const step = new THREE.Mesh(new THREE.BoxGeometry(0.85, 0.12, 0.35), baseMat);
   step.position.set(0, 0.06, 1.38);
 
-  house.add(plinth, walls, roof, chimney, door, step);
+  house.add(plinth, walls, roof, chimney, door, knob, step);
 
   [-0.92, 0.92].forEach((wx) => {
-    const frame = new THREE.Mesh(new THREE.BoxGeometry(0.56, 0.56, 0.1), woodMat);
+    const frame = new THREE.Mesh(new THREE.BoxGeometry(0.58, 0.58, 0.1), woodMat);
     frame.position.set(wx, 1.42, 1.21);
-    const pane = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.42, 0.12), glassMat);
+    const pane = new THREE.Mesh(new THREE.BoxGeometry(0.44, 0.44, 0.12), glassMat);
     pane.position.set(wx, 1.42, 1.22);
-    house.add(frame, pane);
+    const mullionV = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.44, 0.14), woodMat);
+    mullionV.position.set(wx, 1.42, 1.225);
+    const mullionH = new THREE.Mesh(new THREE.BoxGeometry(0.44, 0.04, 0.14), woodMat);
+    mullionH.position.set(wx, 1.42, 1.225);
+    house.add(frame, pane, mullionV, mullionH);
   });
 
   house.traverse((obj) => {
-    if ((obj as THREE.Mesh).isMesh) {
+    if ((obj as THREE.Mesh).isMesh && !obj.userData?.isOutline) {
       obj.castShadow = true;
       obj.receiveShadow = true;
     }
@@ -146,7 +193,7 @@ function createCottage(roofColor: number, wallColor: number): THREE.Group {
 
 function buildVillage(maxAnisotropy: number): EnvironmentHandle {
   const group = new THREE.Group();
-  group.add(createSkyDome('#2563eb', '#93c5fd', '#dcfce7', true));
+  group.add(createSkyDome('#1e40af', '#60a5fa', '#86efac', true));
 
   const grassTex = createGrassTexture(maxAnisotropy);
   const groundMat = new THREE.MeshStandardMaterial({ map: grassTex, roughness: 0.9, metalness: 0.0 });
@@ -181,12 +228,13 @@ function buildVillage(maxAnisotropy: number): EnvironmentHandle {
   swimBank.receiveShadow = true;
   group.add(swimBank);
 
+  const waterTex = createWaterRippleTexture(maxAnisotropy);
   const waterMat = new THREE.MeshPhysicalMaterial({
-    color: 0x0ea5e9,
-    roughness: 0.08,
-    metalness: 0.15,
+    map: waterTex,
+    roughness: 0.1,
+    metalness: 0.12,
     clearcoat: 1.0,
-    clearcoatRoughness: 0.05,
+    clearcoatRoughness: 0.04,
   });
   const river = new THREE.Mesh(new THREE.BoxGeometry(3.5, 0.045, 34), waterMat);
   river.position.set(6.6, 0.024, 0);
@@ -273,18 +321,18 @@ function buildVillage(maxAnisotropy: number): EnvironmentHandle {
   });
   group.add(bridge);
 
-  // Cottages
-  const c1 = createCottage(0xdc2626, 0xfef3c7);
+  // Cottages with brick/stone walls, shingle roofs & glowing windows
+  const c1 = createCottage(0xdc2626, 0xfef3c7, maxAnisotropy);
   c1.position.set(-5.6, 0, -4.5);
   c1.rotation.y = 0.42;
   group.add(c1);
 
-  const c2 = createCottage(0x2563eb, 0xf1f5f9);
+  const c2 = createCottage(0x2563eb, 0xf1f5f9, maxAnisotropy);
   c2.position.set(3.2, 0, -6.2);
   c2.rotation.y = -0.35;
   group.add(c2);
 
-  const c3 = createCottage(0xd97706, 0xffedd5);
+  const c3 = createCottage(0xd97706, 0xffedd5, maxAnisotropy);
   c3.position.set(-1.4, 0, -8.8);
   group.add(c3);
 
@@ -329,7 +377,7 @@ function buildVillage(maxAnisotropy: number): EnvironmentHandle {
   group.add(flowers);
 
   // Rolling perimeter hills
-  const hillMat = new THREE.MeshStandardMaterial({ color: 0x3b8c47, roughness: 0.94 });
+  const hillMat = new THREE.MeshStandardMaterial({ color: 0x166534, roughness: 0.92 });
   for (let i = 0; i < 12; i++) {
     const angle = (i / 12) * Math.PI * 2;
     const hill = new THREE.Mesh(new THREE.SphereGeometry(7 + (i % 3) * 2, 16, 12), hillMat);
@@ -338,17 +386,37 @@ function buildVillage(maxAnisotropy: number): EnvironmentHandle {
     group.add(hill);
   }
 
+  // Fluffy 3D Drifting Clouds
+  const cloudsGroup = new THREE.Group();
+  [
+    [-12, 11.5, -24, 1.4],
+    [2, 13.0, -28, 1.6],
+    [15, 10.8, -22, 1.25],
+    [-22, 12.0, -14, 1.2],
+  ].forEach(([cx, cy, cz, cs]) => {
+    const cl = createCloudCluster(cs);
+    cl.position.set(cx, cy, cz);
+    cloudsGroup.add(cl);
+  });
+  group.add(cloudsGroup);
+
   return {
     group,
     fogColor: 0xcbeafe,
     fogNear: 22,
     fogFar: 66,
-    bgColor: 0xcbeafe,
+    bgColor: 0x60a5fa,
     animatedUpdate: (elapsed) => {
-      river.position.z = Math.sin(elapsed * 0.9) * 0.25;
+      river.position.z = Math.sin(elapsed * 0.9) * 0.2;
+      waterTex.offset.y = (elapsed * 0.28) % 1;
       waterfallTex.offset.y = (elapsed * 0.85) % 1;
       splashPool.children.forEach((puff, idx) => {
         puff.scale.setScalar(0.92 + Math.sin(elapsed * 4.5 + idx) * 0.14);
+      });
+      cloudsGroup.children.forEach((cl, idx) => {
+        cl.position.y += Math.sin(elapsed * 0.8 + idx) * 0.002;
+        cl.position.x += 0.004;
+        if (cl.position.x > 26) cl.position.x = -26;
       });
     },
   };
@@ -364,8 +432,9 @@ function buildClassroom(maxAnisotropy: number): EnvironmentHandle {
   floor.receiveShadow = true;
   group.add(floor);
 
-  const wallMat = new THREE.MeshStandardMaterial({ color: 0xfef3c7, roughness: 0.88 });
-  const wainscotMat = new THREE.MeshStandardMaterial({ color: 0xd97706, roughness: 0.75 });
+  const brickTex = createBrickStoneTexture(maxAnisotropy);
+  const wallMat = new THREE.MeshStandardMaterial({ map: brickTex, color: 0xfef3c7, roughness: 0.85 });
+  const wainscotMat = new THREE.MeshStandardMaterial({ map: woodTex, color: 0xd97706, roughness: 0.72 });
 
   const backWall = new THREE.Mesh(new THREE.BoxGeometry(14, 5.2, 0.25), wallMat);
   backWall.position.set(0, 2.6, -5.5);
@@ -501,7 +570,7 @@ function buildClassroom(maxAnisotropy: number): EnvironmentHandle {
 
 function buildCityPark(maxAnisotropy: number): EnvironmentHandle {
   const group = new THREE.Group();
-  group.add(createSkyDome('#0284c7', '#7dd3fc', '#fef9c3', true));
+  group.add(createSkyDome('#1e40af', '#60a5fa', '#bfdbfe', true));
 
   const grassTex = createGrassTexture(maxAnisotropy);
   const grassMat = new THREE.MeshStandardMaterial({ map: grassTex, roughness: 0.92 });
@@ -510,9 +579,11 @@ function buildCityPark(maxAnisotropy: number): EnvironmentHandle {
   ground.receiveShadow = true;
   group.add(ground);
 
+  const cobbleTex = createCobbleTexture(maxAnisotropy);
   const paveMat = new THREE.MeshStandardMaterial({
-    color: 0xcbd5e1,
-    roughness: 0.82,
+    map: cobbleTex,
+    color: 0xe2e8f0,
+    roughness: 0.8,
     polygonOffset: true,
     polygonOffsetFactor: -1,
     polygonOffsetUnits: -1,
@@ -529,17 +600,24 @@ function buildCityPark(maxAnisotropy: number): EnvironmentHandle {
   group.add(centerCircle, pathNS, pathEW);
 
   const fountain = new THREE.Group();
-  const stoneMat = new THREE.MeshStandardMaterial({ color: 0x94a3b8, roughness: 0.72 });
-  const waterMat = new THREE.MeshStandardMaterial({ color: 0x38bdf8, roughness: 0.12, metalness: 0.15 });
-  const basin = new THREE.Mesh(new THREE.CylinderGeometry(1.65, 1.8, 0.45, 24), stoneMat);
+  const stoneTex = createBrickStoneTexture(maxAnisotropy);
+  const parkWaterTex = createWaterRippleTexture(maxAnisotropy);
+  const stoneMat = new THREE.MeshStandardMaterial({ map: stoneTex, color: 0xcbd5e1, roughness: 0.72 });
+  const waterMat = new THREE.MeshPhysicalMaterial({
+    map: parkWaterTex,
+    roughness: 0.1,
+    metalness: 0.12,
+    clearcoat: 1.0,
+  });
+  const basin = new THREE.Mesh(new THREE.CylinderGeometry(1.65, 1.8, 0.45, 32), stoneMat);
   basin.position.y = 0.225;
-  const waterDisc = new THREE.Mesh(new THREE.CylinderGeometry(1.48, 1.48, 0.36, 24), waterMat);
+  const waterDisc = new THREE.Mesh(new THREE.CylinderGeometry(1.48, 1.48, 0.36, 32), waterMat);
   waterDisc.position.y = 0.24;
-  const pillar = new THREE.Mesh(new THREE.CylinderGeometry(0.24, 0.34, 1.25, 16), stoneMat);
+  const pillar = new THREE.Mesh(new THREE.CylinderGeometry(0.24, 0.34, 1.25, 24), stoneMat);
   pillar.position.y = 0.75;
-  const topBowl = new THREE.Mesh(new THREE.CylinderGeometry(0.75, 0.28, 0.26, 20), stoneMat);
+  const topBowl = new THREE.Mesh(new THREE.CylinderGeometry(0.75, 0.28, 0.26, 28), stoneMat);
   topBowl.position.y = 1.35;
-  const spout = new THREE.Mesh(new THREE.SphereGeometry(0.22, 12, 10), waterMat);
+  const spout = new THREE.Mesh(new THREE.SphereGeometry(0.22, 20, 16), waterMat);
   spout.position.y = 1.62;
   fountain.add(basin, waterDisc, pillar, topBowl, spout);
   fountain.position.set(0, 0, -4.6);
@@ -551,7 +629,8 @@ function buildCityPark(maxAnisotropy: number): EnvironmentHandle {
   });
   group.add(fountain);
 
-  const benchWoodMat = new THREE.MeshStandardMaterial({ color: 0x92400e, roughness: 0.7 });
+  const woodTex = createWoodPlankTexture(maxAnisotropy);
+  const benchWoodMat = new THREE.MeshStandardMaterial({ map: woodTex, color: 0xb45309, roughness: 0.68 });
   const ironMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, metalness: 0.7, roughness: 0.35 });
   const makeBench = (x: number, z: number, rotY: number) => {
     const b = new THREE.Group();
@@ -657,11 +736,12 @@ function buildCityPark(maxAnisotropy: number): EnvironmentHandle {
     group.add(goal);
   });
 
-  const skylineMat = new THREE.MeshStandardMaterial({ color: 0x475569, roughness: 0.7 });
+  const skylineMat = new THREE.MeshStandardMaterial({ map: stoneTex, color: 0x64748b, roughness: 0.7 });
   const skylineWinMat = new THREE.MeshStandardMaterial({
-    color: 0x334155,
+    map: stoneTex,
+    color: 0x475569,
     emissive: 0xfef08a,
-    emissiveIntensity: 0.18,
+    emissiveIntensity: 0.22,
     roughness: 0.4,
   });
   for (let i = 0; i < 16; i++) {
@@ -674,15 +754,32 @@ function buildCityPark(maxAnisotropy: number): EnvironmentHandle {
     group.add(bldg);
   }
 
+  const parkClouds = new THREE.Group();
+  [
+    [-10, 12, -22, 1.35],
+    [8, 13.5, -26, 1.5],
+  ].forEach(([cx, cy, cz, cs]) => {
+    const cl = createCloudCluster(cs);
+    cl.position.set(cx, cy, cz);
+    parkClouds.add(cl);
+  });
+  group.add(parkClouds);
+
   return {
     group,
     fogColor: 0xbae6fd,
     fogNear: 20,
     fogFar: 60,
-    bgColor: 0xbae6fd,
+    bgColor: 0x38bdf8,
     animatedUpdate: (elapsed) => {
       spout.position.y = 1.56 + Math.abs(Math.sin(elapsed * 4.5)) * 0.22;
       spout.scale.setScalar(0.9 + Math.sin(elapsed * 6) * 0.12);
+      parkWaterTex.offset.x = (elapsed * 0.18) % 1;
+      parkWaterTex.offset.y = (elapsed * 0.12) % 1;
+      parkClouds.children.forEach((cl) => {
+        cl.position.x += 0.004;
+        if (cl.position.x > 26) cl.position.x = -26;
+      });
     },
   };
 }
@@ -913,12 +1010,14 @@ function buildStudioStage(): EnvironmentHandle {
   };
 }
 
-function buildRoyalPalace(): EnvironmentHandle {
+function buildRoyalPalace(maxAnisotropy = 4): EnvironmentHandle {
   const group = new THREE.Group();
 
-  // Checkered marble floor
-  const marbleLight = new THREE.MeshStandardMaterial({ color: 0xf1f5f9, roughness: 0.25, metalness: 0.12 });
-  const marbleDark = new THREE.MeshStandardMaterial({ color: 0xcbd5e1, roughness: 0.28, metalness: 0.14 });
+  // Checkered veined marble floor
+  const marbleTex = createMarbleTexture(maxAnisotropy);
+  const palaceBrickTex = createBrickStoneTexture(maxAnisotropy);
+  const marbleLight = new THREE.MeshPhysicalMaterial({ map: marbleTex, color: 0xf8fafc, roughness: 0.2, metalness: 0.1, clearcoat: 0.65 });
+  const marbleDark = new THREE.MeshPhysicalMaterial({ map: marbleTex, color: 0x94a3b8, roughness: 0.24, metalness: 0.12, clearcoat: 0.55 });
   const floorBase = new THREE.Mesh(new THREE.BoxGeometry(16, 0.2, 16), marbleLight);
   floorBase.position.y = -0.1;
   floorBase.receiveShadow = true;
@@ -948,7 +1047,7 @@ function buildRoyalPalace(): EnvironmentHandle {
   group.add(carpet, trimL, trimR);
 
   // Back palace wall & royal arches
-  const wallMat = new THREE.MeshStandardMaterial({ color: 0xfef3c7, roughness: 0.72 });
+  const wallMat = new THREE.MeshStandardMaterial({ map: palaceBrickTex, color: 0xfef3c7, roughness: 0.72 });
   const backWall = new THREE.Mesh(new THREE.BoxGeometry(16, 6.2, 0.35), wallMat);
   backWall.position.set(0, 3.1, -6.4);
   backWall.receiveShadow = true;
@@ -1038,7 +1137,7 @@ export function buildEnvironment(id: EnvironmentId, maxAnisotropy = 4): Environm
     case 'park':
       return buildCityPark(maxAnisotropy);
     case 'palace':
-      return buildRoyalPalace();
+      return buildRoyalPalace(maxAnisotropy);
     case 'forest':
       return buildNightForest();
     case 'studio':
@@ -1054,40 +1153,43 @@ export function applyLightingMode(
   envHandle: EnvironmentHandle,
   mode: LightingMode
 ): void {
+  // Completely eliminate pale/white distance fog so colors remain vibrant and studio-crisp
+  scene.fog = null;
+
   if (mode === 'day') {
-    hemiLight.color.setHex(0x60a5fa);
-    hemiLight.groundColor.setHex(0x4ade80);
-    hemiLight.intensity = 1.05;
+    hemiLight.color.setHex(0x38bdf8);
+    hemiLight.groundColor.setHex(0x166534);
+    hemiLight.intensity = 0.75;
     keyLight.color.setHex(0xfff4d6);
-    keyLight.intensity = 2.1;
-    keyLight.position.set(8, 15, 9);
-    rimLight.color.setHex(0xfef08a);
-    rimLight.intensity = 0.95;
+    keyLight.intensity = 2.3;
+    keyLight.position.set(8, 14, 10);
+    rimLight.color.setHex(0x93c5fd);
+    rimLight.intensity = 1.0;
+    rimLight.position.set(-7, 8, -10);
     scene.background = new THREE.Color(envHandle.bgColor);
-    scene.fog = new THREE.Fog(envHandle.fogColor, envHandle.fogNear, envHandle.fogFar);
   } else if (mode === 'sunset') {
     hemiLight.color.setHex(0xfdba74);
     hemiLight.groundColor.setHex(0x4c1d95);
     hemiLight.intensity = 0.85;
     keyLight.color.setHex(0xf97316);
-    keyLight.intensity = 2.05;
+    keyLight.intensity = 2.2;
     keyLight.position.set(-11, 6.5, 8);
     rimLight.color.setHex(0xf472b6);
-    rimLight.intensity = 0.88;
+    rimLight.intensity = 1.0;
+    rimLight.position.set(8, 7, -10);
     scene.background = new THREE.Color(0x431407);
-    scene.fog = new THREE.Fog(0x7c2d12, 15, 52);
   } else {
     // night
     hemiLight.color.setHex(0x38bdf8);
     hemiLight.groundColor.setHex(0x090d16);
-    hemiLight.intensity = 0.5;
+    hemiLight.intensity = 0.55;
     keyLight.color.setHex(0x93c5fd);
-    keyLight.intensity = 1.05;
+    keyLight.intensity = 1.15;
     keyLight.position.set(-7, 13, 6);
     rimLight.color.setHex(0x6366f1);
-    rimLight.intensity = 0.8;
+    rimLight.intensity = 0.95;
+    rimLight.position.set(7, 7, -10);
     scene.background = new THREE.Color(0x060913);
-    scene.fog = new THREE.Fog(0x0b1324, 12, 44);
   }
 }
 
