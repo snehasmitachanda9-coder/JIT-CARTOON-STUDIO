@@ -210,7 +210,15 @@ export function createCharacterRig(kind: CharacterKind, accentColor: string): Ch
   placeholderLeftHand.position.set(0.32, 0.9, 0.14);
   const placeholderRightHand = new THREE.Group();
   placeholderRightHand.position.set(-0.32, 0.9, 0.14);
-  bodyPivot.add(placeholderLeftHand, placeholderRightHand, loadingRing);
+
+  const hitProxy = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.36, 0.36, 1.65, 8),
+    new THREE.MeshBasicMaterial({ visible: false })
+  );
+  hitProxy.position.y = 0.85;
+  hitProxy.userData.isHitProxy = true;
+
+  bodyPivot.add(placeholderLeftHand, placeholderRightHand, loadingRing, hitProxy);
 
   root.add(shadow, selectionRing, speechSprite);
 

@@ -146,7 +146,12 @@ function hideHelpersAndComputeBounds(container: THREE.Object3D): THREE.Box3 {
   const box = new THREE.Box3();
   container.traverse((obj) => {
     const mesh = obj as THREE.Mesh;
-    if (mesh.isMesh && mesh.visible && !mesh.userData?.isOutline) {
+    if (
+      mesh.isMesh &&
+      mesh.visible &&
+      !mesh.userData?.isOutline &&
+      !mesh.userData?.isHitProxy
+    ) {
       const meshBox = new THREE.Box3().setFromObject(mesh);
       if (!meshBox.isEmpty()) {
         box.union(meshBox);

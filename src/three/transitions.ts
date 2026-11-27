@@ -138,7 +138,7 @@ export class ActorTransitionController {
       if (obj === selectionRing || obj === speechSprite) return;
       if ((obj as THREE.Mesh).isMesh) {
         const mesh = obj as THREE.Mesh;
-        if (mesh.userData?.isOutline) return;
+        if (mesh.userData?.isOutline || mesh.userData?.isHitProxy) return;
         const isGroundHelper =
           mesh.geometry.type === 'RingGeometry' ||
           (mesh.geometry.type === 'PlaneGeometry' && Math.abs(mesh.position.y) < 0.05);

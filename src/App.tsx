@@ -305,6 +305,7 @@ export default function App() {
 
   const [activeSceneId, setActiveSceneId] = useState<string>('scene-1');
   const [selectedActorId, setSelectedActorId] = useState<string | null>('actor-1');
+  const [modelControlsOpen, setModelControlsOpen] = useState(false);
   const [aspectRatio, setAspectRatio] = useState<AspectRatioMode>('16:9');
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [activeTab, setActiveTab] = useState<InspectorTab>('cast');
@@ -526,6 +527,7 @@ export default function App() {
     (id: string) => {
       setIsPlaying(false);
       setMotionPathEditMode('idle');
+      setModelControlsOpen(false);
       setActiveSceneId(id);
       const found = scenes.find((s) => s.id === id);
       if (found) {
@@ -669,7 +671,26 @@ export default function App() {
     });
     if (id) {
       setActiveTab('cast');
+      setModelControlsOpen(true);
+    } else {
+      setModelControlsOpen(false);
+      setMotionPathEditMode('idle');
     }
+  }, []);
+
+  const handleSelectActorFromTimeline = useCallback(
+    (id: string) => {
+      handleSelectActor(id);
+      if (typeof window !== 'undefined' && window.innerWidth < 768) {
+        setMobileSheetOpen(true);
+      }
+    },
+    [handleSelectActor]
+  );
+
+  const handleCloseModelControls = useCallback(() => {
+    setModelControlsOpen(false);
+    setMotionPathEditMode('idle');
   }, []);
 
   const handleOpenUpdateActivity = useCallback((actor: SceneActor) => {
@@ -778,6 +799,8 @@ export default function App() {
           )
         );
         setSelectedActorId(twinA.id);
+        setActiveTab('cast');
+        setModelControlsOpen(true);
         setActivityModalTarget(null);
         setMobileSheetOpen(false);
         return;
@@ -828,6 +851,8 @@ export default function App() {
         )
       );
       setSelectedActorId(actor.id);
+      setActiveTab('cast');
+      setModelControlsOpen(true);
       setActivityModalTarget(null);
       setMobileSheetOpen(false);
     },
@@ -1040,7 +1065,13 @@ export default function App() {
             : s
         )
       );
-      setSelectedActorId((prev) => (prev === actorId ? null : prev));
+      setSelectedActorId((prev) => {
+        if (prev === actorId) {
+          setModelControlsOpen(false);
+          return null;
+        }
+        return prev;
+      });
     },
     [activeSceneId, commitScenes]
   );
@@ -1723,23 +1754,24 @@ export default function App() {
                     </span>
                     <button
                       type="button"
+                      onClick={() => {
+                        setActiveTab('cast');
+                        setModelControlsOpen(true);
+                        if (typeof window !== 'undefined' && window.innerWidth < 768) {
+                          setMobileSheetOpen(true);
+                        }
+                      }}
+                      className="px-2 py-1 rounded-md bg-sky-500/15 hover:bg-sky-500/25 border border-sky-400/40 text-[11px] font-medium text-sky-200 cursor-pointer whitespace-nowrap"
+                    >
+                      Motion & Effects
+                    </button>
+                    <button
+                      type="button"
                       onClick={() => handleOpenUpdateActivity(sel)}
                       className="px-2 py-1 rounded-md bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/40 text-[11px] font-medium text-amber-300 cursor-pointer whitespace-nowrap"
                     >
                       Activity
                     </button>
-                    {sel.actorType === 'character' && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setActiveTab('cast');
-                          setMobileSheetOpen(true);
-                        }}
-                        className="md:hidden px-2 py-1 rounded-md bg-sky-500/15 hover:bg-sky-500/25 border border-sky-400/40 text-[11px] font-medium text-sky-200 cursor-pointer whitespace-nowrap"
-                      >
-                        Hand Prop
-                      </button>
-                    )}
                   </div>
                 );
               })()
@@ -1781,6 +1813,8 @@ export default function App() {
           onCloseMobileSheet={() => setMobileSheetOpen(false)}
           activeScene={activeScene}
           selectedActorId={selectedActorId}
+          modelControlsOpen={modelControlsOpen}
+          onCloseModelControls={handleCloseModelControls}
           customModels={customModels}
           motionPathEditMode={motionPathEditMode}
           isRecordingMic={isRecordingMic}
@@ -1819,7 +1853,7 @@ export default function App() {
         storyElapsed={storyElapsed}
         totalDuration={totalDuration}
         onSelectScene={handleSelectScene}
-        onSelectActor={handleSelectActor}
+        onSelectActor={handleSelectActorFromTimeline}
         onScrubTimeline={handleScrubTimeline}
         onScrubStateChange={setIsScrubbing}
         onAddScene={handleAddScene}

@@ -1,10 +1,12 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  ArrowLeft,
   ArrowLeftRight,
   Box,
   Camera,
   Car,
   Copy,
+  GitBranch,
   Hand,
   Image as ImageIcon,
   MessageSquare,
@@ -106,6 +108,8 @@ interface InspectorPanelProps {
   onCloseMobileSheet: () => void;
   activeScene: SceneData;
   selectedActorId: string | null;
+  modelControlsOpen: boolean;
+  onCloseModelControls: () => void;
   customModels: CustomModelBlueprint[];
   motionPathEditMode: MotionPathEditMode;
   isRecordingMic: boolean;
@@ -240,6 +244,8 @@ export function InspectorPanel({
   onCloseMobileSheet,
   activeScene,
   selectedActorId,
+  modelControlsOpen,
+  onCloseModelControls,
   customModels,
   motionPathEditMode,
   isRecordingMic,
@@ -299,6 +305,7 @@ export function InspectorPanel({
   const [isGeneratingStory, setIsGeneratingStory] = useState(false);
   const [generatedScript, setGeneratedScript] =
     useState<GeneratedStoryScript | null>(null);
+  const [showEffectsGrid, setShowEffectsGrid] = useState(false);
 
   const libraryItems = useMemo(() => {
     const q = librarySearch.trim().toLowerCase();
@@ -501,154 +508,139 @@ export function InspectorPanel({
 
   const renderTabBody = () => {
     if (activeTab === 'cast') {
-      const heldItem = selectedActor
-        ? activeHand === 'left'
-          ? selectedActor.heldItemLeft
-          : selectedActor.heldItemRight
-        : null;
-      const actorActivities = selectedActor
-        ? getActivitiesForModel(selectedActor.actorType, selectedActor.kind)
-        : [];
-      const swatches = selectedActor ? getSwatchesForActor(selectedActor) : null;
+      if (modelControlsOpen && selectedActor) {
+        const heldItem =
+          activeHand === 'left'
+            ? selectedActor.heldItemLeft
+            : selectedActor.heldItemRight;
+        const actorActivities = getActivitiesForModel(
+          selectedActor.actorType,
+          selectedActor.kind
+        );
+        const swatches = getSwatchesForActor(selectedActor);
 
-      return (
-        <div className="space-y-4">
-          {/* Permanent Built-In 3D Library */}
-          <section className="space-y-2">
-            <div className="flex items-center justify-between">
-              <h2 className="text-xs font-semibold text-slate-200">
-                Built-In 3D Library
-              </h2>
-              <span className="text-[10px] text-slate-400">Tap model to animate</span>
-            </div>
+        const defaultEndX = Number(
+          (selectedActor.position[0] > 2.5
+            ? selectedActor.position[0] - 2.6
+            : selectedActor.position[0] + 2.6
+          ).toFixed(2)
+        );
 
-            {/* 4 Category Tabs */}
-            <div className="grid grid-cols-4 gap-1 bg-[#0B0E14] p-1 rounded-lg border border-white/8">
-              {(
-                [
-                  ['characters', 'People', <Users key="u" className="w-3 h-3" />],
-                  ['animals', 'Animals', <PawPrint key="p" className="w-3 h-3" />],
-                  ['vehicles', 'Vehicles', <Car key="v" className="w-3 h-3" />],
-                  ['props', 'Props', <Package key="pr" className="w-3 h-3" />],
-                ] as Array<[BuiltInLibraryCategory, string, React.ReactNode]>
-              ).map(([cat, label, icon]) => (
-                <button
-                  key={cat}
-                  type="button"
-                  onClick={() => setLibraryCategory(cat)}
-                  className={`py-1.5 px-1 rounded-md text-[10px] font-medium flex flex-col items-center gap-0.5 cursor-pointer transition-colors ${
-                    libraryCategory === cat
-                      ? 'bg-amber-500 text-slate-950 font-semibold'
-                      : 'text-slate-300 hover:bg-white/5'
-                  }`}
-                >
-                  {icon}
-                  <span className="truncate max-w-full">{label}</span>
-                </button>
-              ))}
-            </div>
+        const resolvedMp: MotionPathConfig = selectedActor.motionPath
+          ? selectedActor.motionPath
+          : selectedActor.walkPath?.enabled
+            ? {
+                enabled: true,
+                mode: 'straight',
+                points: [
+                  [...selectedActor.walkPath.start],
+                  [...selectedActor.walkPath.end],
+                ],
+                cornerStyle: 'sharp',
+              }
+            : {
+                enabled: false,
+                mode: 'straight',
+                points: [
+                  [...selectedActor.position],
+                  [defaultEndX, selectedActor.position[1]],
+                ],
+                cornerStyle: 'rounded',
+              };
 
-            {/* Search Input */}
-            <div className="relative">
-              <Search className="w-3.5 h-3.5 text-slate-500 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-              <input
-                type="text"
-                value={librarySearch}
-                onChange={(e) => setLibrarySearch(e.target.value)}
-                placeholder="Search models..."
-                className="w-full h-8 pl-8 pr-2.5 rounded-lg bg-[#0B0E14] border border-white/10 text-xs text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-amber-500"
-              />
-            </div>
+        const switchMotionMode = (nextMode: MotionPathMode) => {
+          const basePts: Array<[number, number]> =
+            resolvedMp.points.length >= 2
+              ? resolvedMp.points
+              : [[...selectedActor.position], [defaultEndX, selectedActor.position[1]]];
 
-            {/* Model Grid with 3D Thumbnails */}
-            <div className="grid grid-cols-2 gap-2 max-h-72 overflow-y-auto studio-scroll pr-0.5">
-              {libraryItems.map((item) => {
-                const thumbKey = getThumbnailKey(item.actorType, item.kind);
-                const thumbUrl = thumbMap[thumbKey];
-                return (
-                  <button
-                    key={`${item.actorType}-${item.kind}`}
-                    type="button"
-                    onClick={() =>
-                      onOpenLibraryPicker(item.actorType, item.kind, item.label)
-                    }
-                    className="p-1.5 rounded-xl bg-[#171E2E] hover:bg-[#1E273B] border border-white/10 hover:border-amber-400/50 text-left transition-all cursor-pointer flex flex-col gap-1.5 group"
-                  >
-                    <div className="h-24 w-full rounded-lg bg-[radial-gradient(circle_at_50%_38%,#27344f_0%,#0f1523_85%)] border border-white/5 flex items-center justify-center overflow-hidden relative">
-                      {thumbUrl ? (
-                        <img
-                          src={thumbUrl}
-                          alt={item.label}
-                          className="w-full h-full object-contain transition-transform duration-200 group-hover:scale-105"
-                          draggable={false}
-                        />
-                      ) : (
-                        <Box className="w-6 h-6 text-slate-500 animate-pulse" />
-                      )}
-                      <span className="absolute top-1.5 right-1.5 w-5 h-5 rounded-md bg-black/45 text-amber-400 flex items-center justify-center opacity-80 group-hover:opacity-100 group-hover:bg-amber-500 group-hover:text-slate-950 transition-colors">
-                        <Plus className="w-3 h-3" />
-                      </span>
-                    </div>
-                    <div className="min-w-0 px-0.5 pb-0.5">
-                      <div className="text-[11px] font-semibold text-slate-100 truncate">
-                        {item.label}
-                      </div>
-                      <div className="text-[10px] text-slate-400 truncate capitalize">
-                        {item.sub || item.actorType}
-                      </div>
-                    </div>
-                  </button>
-                );
-              })}
-              {libraryItems.length === 0 && (
-                <div className="col-span-2 text-center py-3 text-xs text-slate-500">
-                  No matching models.
-                </div>
-              )}
-            </div>
-          </section>
+          const nextPts: Array<[number, number]> =
+            nextMode === 'straight'
+              ? [basePts[0], basePts[basePts.length - 1]]
+              : basePts;
 
-          {/* Cast on Stage */}
-          <section className="space-y-2 pt-3 border-t border-white/8">
-            <div className="flex items-center justify-between">
-              <h2 className="text-xs font-semibold text-slate-300">
-                On Stage ({activeScene.actors.length})
-              </h2>
-            </div>
-            <div className="flex flex-wrap gap-1.5">
-              {activeScene.actors.map((actor) => {
-                const isSel = actor.id === selectedActorId;
-                return (
-                  <button
-                    key={actor.id}
-                    type="button"
-                    onClick={() => onSelectActor(actor.id)}
-                    className={`px-2.5 py-1.5 rounded-lg text-xs font-medium border flex items-center gap-1.5 transition-colors cursor-pointer ${
-                      isSel
-                        ? 'bg-amber-500 text-slate-950 border-amber-400 font-semibold'
-                        : 'bg-[#171E2E] text-slate-300 border-white/10 hover:bg-[#1E273B]'
-                    }`}
-                  >
-                    <span
-                      className="w-2 h-2 rounded-full shrink-0"
-                      style={{
-                        backgroundColor: isSel ? '#0f172a' : actor.accentColor,
-                      }}
-                    />
-                    <span className="truncate max-w-[105px]">{actor.name}</span>
-                  </button>
-                );
-              })}
-            </div>
-          </section>
+          onUpdateActor(selectedActor.id, {
+            motionPath: {
+              enabled: true,
+              mode: nextMode,
+              points: nextPts,
+              cornerStyle:
+                nextMode === 'multiPoint'
+                  ? resolvedMp.cornerStyle || 'rounded'
+                  : nextMode === 'freehand'
+                    ? 'rounded'
+                    : 'sharp',
+            },
+            walkPath: undefined,
+          });
+          onSetMotionPathEditMode(
+            nextMode === 'freehand'
+              ? 'drawFreehand'
+              : nextMode === 'multiPoint'
+                ? 'addWaypoint'
+                : 'idle'
+          );
+        };
 
-          {/* Selected Actor Controls */}
-          {selectedActor && (
-            <section className="space-y-3.5 pt-3 border-t border-white/8">
+        const reversePath = () => {
+          if (resolvedMp.points.length < 2) return;
+          const rev = [...resolvedMp.points].reverse();
+          onUpdateActor(selectedActor.id, {
+            position: [...rev[0]],
+            motionPath: { ...resolvedMp, enabled: true, points: rev },
+            walkPath: undefined,
+          });
+        };
+
+        const clearPath = () => {
+          onSetMotionPathEditMode('idle');
+          onUpdateActor(selectedActor.id, {
+            motionPath: undefined,
+            walkPath: undefined,
+          });
+        };
+
+        const tr: EntranceExitConfig = selectedActor.transitions || {
+          entrance: 'none',
+          entranceDuration: 0.8,
+          entranceDirection: 'left',
+          exit: 'none',
+          exitDuration: 0.8,
+          exitDirection: 'right',
+        };
+
+        const patchTransitions = (patch: Partial<EntranceExitConfig>) => {
+          onUpdateActor(selectedActor.id, {
+            transitions: { ...tr, ...patch },
+          });
+        };
+
+        const showInDirs = tr.entrance === 'flyIn' || tr.entrance === 'wipe';
+        const showOutDirs = tr.exit === 'flyOut' || tr.exit === 'wipe';
+
+        return (
+          <div className="space-y-3.5">
+            {/* Dedicated Back to 3D Library + Model Controls Header */}
+            <div className="space-y-2 pb-2.5 border-b border-white/10">
+              <button
+                type="button"
+                onClick={onCloseModelControls}
+                className="w-full py-1.5 px-2.5 rounded-lg bg-[#171E2E] hover:bg-[#212B42] border border-white/12 text-xs font-medium text-sky-300 flex items-center gap-1.5 cursor-pointer transition-colors"
+              >
+                <ArrowLeft className="w-3.5 h-3.5 shrink-0" />
+                <span>Back to 3D Library</span>
+              </button>
+
               <div className="flex items-center justify-between gap-2">
-                <h2 className="text-xs font-semibold text-amber-400 truncate">
-                  {selectedActor.name}
-                </h2>
+                <div className="min-w-0 flex items-center gap-2">
+                  <span
+                    className="w-2.5 h-2.5 rounded-full shrink-0 ring-2 ring-white/15"
+                    style={{ backgroundColor: selectedActor.accentColor }}
+                  />
+                  <h2 className="text-xs font-semibold text-amber-300 truncate">
+                    Model Controls: {selectedActor.name}
+                  </h2>
+                </div>
                 <div className="flex items-center gap-1 shrink-0">
                   <button
                     type="button"
@@ -668,76 +660,656 @@ export function InspectorPanel({
                   </button>
                 </div>
               </div>
+            </div>
 
-              {/* Activity Selector */}
-              <div className="space-y-1.5">
-                <div className="flex items-center justify-between">
-                  <label className="block text-[11px] font-medium text-slate-400">
-                    Activity
-                  </label>
-                  <button
-                    type="button"
-                    onClick={() => onOpenUpdateActivity(selectedActor)}
-                    className="text-[11px] font-medium text-amber-300 hover:text-amber-200 cursor-pointer"
-                  >
-                    Open Full Picker
-                  </button>
-                </div>
-                <div className="grid grid-cols-2 gap-1.5 max-h-40 overflow-y-auto studio-scroll pr-0.5">
-                  {actorActivities.map((anim: AnimationState) => {
-                    const active = selectedActor.animation === anim;
+            {/* Compact Activity & Expression Bar */}
+            <div className="space-y-2">
+              <div className="flex items-center gap-1.5">
+                <select
+                  aria-label="Activity"
+                  value={selectedActor.animation}
+                  onChange={(e) =>
+                    onUpdateActor(selectedActor.id, {
+                      animation: e.target.value as AnimationState,
+                    })
+                  }
+                  className="flex-1 min-w-0 h-8 px-2 rounded-lg bg-[#0B0E14] border border-white/12 text-xs text-slate-100 focus:outline-none focus:border-amber-500 cursor-pointer"
+                >
+                  {actorActivities.map((anim) => (
+                    <option key={anim} value={anim}>
+                      Activity: {anim}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  onClick={() => onOpenUpdateActivity(selectedActor)}
+                  className="h-8 px-2.5 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/40 text-[11px] font-medium text-amber-300 shrink-0 cursor-pointer"
+                >
+                  Picker
+                </button>
+              </div>
+
+              {(selectedActor.actorType === 'character' ||
+                selectedActor.actorType === 'animal') && (
+                <div className="grid grid-cols-4 gap-1">
+                  {FACIAL_EXPRESSIONS.map((expr: FacialExpression) => {
+                    const active = selectedActor.expression === expr;
                     return (
                       <button
-                        key={anim}
+                        key={expr}
                         type="button"
                         onClick={() =>
-                          onUpdateActor(selectedActor.id, { animation: anim })
+                          onUpdateActor(selectedActor.id, { expression: expr })
                         }
-                        className={`px-2 py-1.5 rounded-md text-[11px] font-medium border text-left truncate transition-colors cursor-pointer ${
+                        className={`py-1 px-1 rounded-md text-[10px] font-medium border text-center truncate cursor-pointer ${
                           active
-                            ? 'bg-sky-500/20 border-sky-400/70 text-sky-200'
+                            ? 'bg-amber-500/20 border-amber-400 text-amber-200 font-semibold'
                             : 'bg-[#171E2E] border-white/8 text-slate-300 hover:bg-[#1E273B]'
                         }`}
                       >
-                        {anim}
+                        {expr}
                       </button>
                     );
                   })}
                 </div>
+              )}
+            </div>
+
+            {/* Prominent Motion Path Card (Move Character from Point A to B) */}
+            <div className="p-2.5 rounded-xl bg-[#161C2B] border border-sky-500/35 space-y-2.5">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-xs font-semibold text-sky-300 flex items-center gap-1.5">
+                  <Route className="w-3.5 h-3.5 text-sky-400" />
+                  <span>Motion Path (Walk / Run / Move)</span>
+                </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const nextEnabled = !resolvedMp.enabled;
+                    if (!nextEnabled) onSetMotionPathEditMode('idle');
+                    onUpdateActor(selectedActor.id, {
+                      motionPath: { ...resolvedMp, enabled: nextEnabled },
+                      walkPath: undefined,
+                    });
+                  }}
+                  className={`px-2 py-0.5 rounded text-[10px] font-semibold cursor-pointer ${
+                    resolvedMp.enabled
+                      ? 'bg-emerald-500 text-slate-950'
+                      : 'bg-white/10 text-slate-300 hover:bg-white/15'
+                  }`}
+                >
+                  {resolvedMp.enabled ? 'ON' : 'OFF'}
+                </button>
               </div>
 
-              {/* Facial Expression (Character & Animal) */}
-              {(selectedActor.actorType === 'character' ||
-                selectedActor.actorType === 'animal') && (
-                <div className="space-y-1.5">
-                  <label className="block text-[11px] font-medium text-slate-400">
-                    Facial Expression
-                  </label>
-                  <div className="grid grid-cols-4 gap-1">
-                    {FACIAL_EXPRESSIONS.map((expr: FacialExpression) => {
-                      const active = selectedActor.expression === expr;
-                      return (
+              {/* 3 Visual Path Mode Buttons */}
+              <div className="grid grid-cols-3 gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => switchMotionMode('straight')}
+                  className={`p-2 rounded-lg border flex flex-col items-center gap-1 text-center cursor-pointer transition-colors ${
+                    resolvedMp.enabled && resolvedMp.mode === 'straight'
+                      ? 'bg-sky-500/25 border-sky-400 text-sky-100'
+                      : 'bg-[#0E131F] border-white/10 text-slate-300 hover:bg-[#1C2438]'
+                  }`}
+                >
+                  <ArrowLeftRight className="w-3.5 h-3.5 text-amber-300" />
+                  <span className="text-[10px] font-semibold leading-tight">
+                    Straight Line
+                  </span>
+                  <span className="text-[9px] text-slate-400 leading-none">
+                    A → B
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => switchMotionMode('freehand')}
+                  className={`p-2 rounded-lg border flex flex-col items-center gap-1 text-center cursor-pointer transition-colors ${
+                    resolvedMp.enabled && resolvedMp.mode === 'freehand'
+                      ? 'bg-sky-500/25 border-sky-400 text-sky-100'
+                      : 'bg-[#0E131F] border-white/10 text-slate-300 hover:bg-[#1C2438]'
+                  }`}
+                >
+                  <PenTool className="w-3.5 h-3.5 text-sky-300" />
+                  <span className="text-[10px] font-semibold leading-tight">
+                    Freehand
+                  </span>
+                  <span className="text-[9px] text-slate-400 leading-none">
+                    Draw Curve
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => switchMotionMode('multiPoint')}
+                  className={`p-2 rounded-lg border flex flex-col items-center gap-1 text-center cursor-pointer transition-colors ${
+                    resolvedMp.enabled && resolvedMp.mode === 'multiPoint'
+                      ? 'bg-sky-500/25 border-sky-400 text-sky-100'
+                      : 'bg-[#0E131F] border-white/10 text-slate-300 hover:bg-[#1C2438]'
+                  }`}
+                >
+                  <GitBranch className="w-3.5 h-3.5 text-emerald-300" />
+                  <span className="text-[10px] font-semibold leading-tight">
+                    Turns / Path
+                  </span>
+                  <span className="text-[9px] text-slate-400 leading-none">
+                    1 → 2 → 3
+                  </span>
+                </button>
+              </div>
+
+              {resolvedMp.enabled && (
+                <div className="space-y-2 pt-1 border-t border-white/8">
+                  {resolvedMp.mode === 'straight' && (
+                    <>
+                      <div className="text-[10px] font-mono-tabular text-slate-300 flex justify-between">
+                        <span>
+                          A: ({resolvedMp.points[0]?.[0].toFixed(1)},{' '}
+                          {resolvedMp.points[0]?.[1].toFixed(1)})
+                        </span>
+                        <span>
+                          B: (
+                          {resolvedMp.points[
+                            resolvedMp.points.length - 1
+                          ]?.[0].toFixed(1)}
+                          ,{' '}
+                          {resolvedMp.points[
+                            resolvedMp.points.length - 1
+                          ]?.[1].toFixed(1)}
+                          )
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          onSetMotionPathEditMode(
+                            motionPathEditMode === 'pickEnd' ? 'idle' : 'pickEnd'
+                          )
+                        }
+                        className={`w-full py-1.5 px-2.5 rounded-lg text-[11px] font-medium border cursor-pointer ${
+                          motionPathEditMode === 'pickEnd'
+                            ? 'bg-amber-500 text-slate-950 border-amber-400 font-semibold'
+                            : 'bg-[#1D2538] hover:bg-[#242E45] text-amber-300 border-amber-500/35'
+                        }`}
+                      >
+                        {motionPathEditMode === 'pickEnd'
+                          ? 'Tap 3D Ground Now...'
+                          : 'Set Point B on 3D Ground'}
+                      </button>
+                      <p className="text-[10px] text-slate-400">
+                        Drag green Start (A) or amber End (B) handles on stage.
+                      </p>
+                    </>
+                  )}
+
+                  {resolvedMp.mode === 'freehand' && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          onSetMotionPathEditMode(
+                            motionPathEditMode === 'drawFreehand'
+                              ? 'idle'
+                              : 'drawFreehand'
+                          )
+                        }
+                        className={`w-full py-1.5 px-2.5 rounded-lg text-[11px] font-medium border flex items-center justify-center gap-1.5 cursor-pointer ${
+                          motionPathEditMode === 'drawFreehand'
+                            ? 'bg-amber-500 text-slate-950 border-amber-400 font-semibold'
+                            : 'bg-[#1D2538] hover:bg-[#242E45] text-sky-300 border-sky-400/35'
+                        }`}
+                      >
+                        <PenTool className="w-3.5 h-3.5" />
+                        <span>
+                          {motionPathEditMode === 'drawFreehand'
+                            ? 'Drawing... Drag on 3D Ground'
+                            : 'Draw Freehand Path on Stage'}
+                        </span>
+                      </button>
+                      <div className="text-[10px] font-mono-tabular text-slate-400 flex justify-between">
+                        <span>Smooth curved spline</span>
+                        <span>{resolvedMp.points.length} pts</span>
+                      </div>
+                    </>
+                  )}
+
+                  {resolvedMp.mode === 'multiPoint' && (
+                    <>
+                      <div className="flex gap-1.5">
                         <button
-                          key={expr}
                           type="button"
                           onClick={() =>
-                            onUpdateActor(selectedActor.id, { expression: expr })
+                            onSetMotionPathEditMode(
+                              motionPathEditMode === 'addWaypoint'
+                                ? 'idle'
+                                : 'addWaypoint'
+                            )
                           }
-                          className={`py-1.5 px-1 rounded-md text-[11px] font-medium border text-center truncate cursor-pointer ${
-                            active
-                              ? 'bg-amber-500/20 border-amber-400 text-amber-200'
-                              : 'bg-[#171E2E] border-white/8 text-slate-300 hover:bg-[#1E273B]'
+                          className={`flex-1 py-1.5 px-2 rounded-lg text-[11px] font-medium border cursor-pointer ${
+                            motionPathEditMode === 'addWaypoint'
+                              ? 'bg-amber-500 text-slate-950 border-amber-400 font-semibold'
+                              : 'bg-[#1D2538] hover:bg-[#242E45] text-sky-300 border-sky-400/35'
                           }`}
                         >
-                          {expr}
+                          {motionPathEditMode === 'addWaypoint'
+                            ? 'Done Adding Points'
+                            : 'Tap Ground to Add Turns'}
+                        </button>
+                        <button
+                          type="button"
+                          disabled={resolvedMp.points.length <= 2}
+                          onClick={() => {
+                            if (resolvedMp.points.length <= 2) return;
+                            onUpdateActor(selectedActor.id, {
+                              motionPath: {
+                                ...resolvedMp,
+                                points: resolvedMp.points.slice(0, -1),
+                              },
+                            });
+                          }}
+                          className="px-2.5 py-1.5 rounded-lg bg-[#111622] hover:bg-[#1E273B] disabled:opacity-40 border border-white/10 text-[11px] text-slate-300 cursor-pointer"
+                        >
+                          Undo Pt
+                        </button>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-1">
+                        {(
+                          [
+                            ['rounded', 'Rounded Curves'],
+                            ['sharp', 'Sharp Corners'],
+                          ] as const
+                        ).map(([cs, label]) => {
+                          const active =
+                            (resolvedMp.cornerStyle || 'rounded') === cs;
+                          return (
+                            <button
+                              key={cs}
+                              type="button"
+                              onClick={() =>
+                                onUpdateActor(selectedActor.id, {
+                                  motionPath: {
+                                    ...resolvedMp,
+                                    cornerStyle: cs,
+                                  },
+                                })
+                              }
+                              className={`py-1 px-2 rounded-md text-[10px] font-medium border cursor-pointer ${
+                                active
+                                  ? 'bg-sky-500/20 border-sky-400 text-sky-200'
+                                  : 'bg-[#111622] border-white/8 text-slate-300'
+                              }`}
+                            >
+                              {label}
+                            </button>
+                          );
+                        })}
+                      </div>
+
+                      <div className="text-[10px] font-mono-tabular text-slate-400 flex justify-between">
+                        <span>Drag any waypoint node on stage</span>
+                        <span>{resolvedMp.points.length} waypoints</span>
+                      </div>
+                    </>
+                  )}
+
+                  <div className="grid grid-cols-2 gap-1.5 pt-1 border-t border-white/8">
+                    <button
+                      type="button"
+                      onClick={reversePath}
+                      className="py-1.5 px-2 rounded-lg bg-[#111622] hover:bg-[#1E273B] border border-white/10 text-[11px] font-medium text-slate-200 flex items-center justify-center gap-1 cursor-pointer"
+                    >
+                      <ArrowLeftRight className="w-3 h-3 text-sky-400" />
+                      <span>Reverse Path</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={clearPath}
+                      className="py-1.5 px-2 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/25 text-[11px] font-medium text-rose-300 flex items-center justify-center gap-1 cursor-pointer"
+                    >
+                      <Trash2 className="w-3 h-3" />
+                      <span>Clear Path</span>
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Prominent Entrance & Exit Effects Section */}
+            <div className="p-2.5 rounded-xl bg-[#161C2B] border border-amber-500/30 space-y-3">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-xs font-semibold text-amber-300 flex items-center gap-1.5">
+                  <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                  <span>Entrance & Exit Effects</span>
+                </span>
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={() => setShowEffectsGrid((v) => !v)}
+                    className="px-2 py-0.5 rounded bg-[#111622] hover:bg-[#1E273B] border border-white/10 text-[10px] font-medium text-slate-300 cursor-pointer"
+                  >
+                    {showEffectsGrid ? 'Dropdown' : 'Grid'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onPreviewActorTransitions(selectedActor)}
+                    className="px-2 py-0.5 rounded bg-amber-500/20 hover:bg-amber-500/30 border border-amber-400/40 text-[10px] font-semibold text-amber-300 flex items-center gap-1 cursor-pointer"
+                  >
+                    <Play className="w-2.5 h-2.5 fill-current" />
+                    <span>Preview</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Entrance Effect Selector + 0.3s - 2.0s Duration Slider */}
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between text-[11px]">
+                  <label
+                    htmlFor="entrance-effect-select"
+                    className="font-medium text-emerald-300"
+                  >
+                    Entrance Effect
+                  </label>
+                  <span className="font-mono-tabular text-emerald-300">
+                    {tr.entranceDuration.toFixed(1)}s
+                  </span>
+                </div>
+
+                <select
+                  id="entrance-effect-select"
+                  value={tr.entrance}
+                  onChange={(e) =>
+                    patchTransitions({
+                      entrance: e.target.value as EntranceEffect,
+                    })
+                  }
+                  className="w-full h-8 px-2.5 rounded-lg bg-[#0B0E14] border border-emerald-500/35 text-xs text-slate-100 focus:outline-none focus:border-emerald-400 cursor-pointer"
+                >
+                  {ENTRANCE_EFFECT_META.map((eff) => (
+                    <option key={eff.id} value={eff.id}>
+                      {eff.label}
+                    </option>
+                  ))}
+                </select>
+
+                {showEffectsGrid && (
+                  <div className="grid grid-cols-3 gap-1 pt-0.5">
+                    {ENTRANCE_EFFECT_META.map((eff) => {
+                      const active = tr.entrance === eff.id;
+                      return (
+                        <button
+                          key={eff.id}
+                          type="button"
+                          onClick={() =>
+                            patchTransitions({
+                              entrance: eff.id as EntranceEffect,
+                            })
+                          }
+                          className={`py-1 px-1 rounded-md text-[10px] font-medium border truncate cursor-pointer transition-colors ${
+                            active
+                              ? 'bg-emerald-500/20 border-emerald-400 text-emerald-200 font-semibold'
+                              : 'bg-[#111622] border-white/8 text-slate-300 hover:bg-[#1E273B]'
+                          }`}
+                        >
+                          {eff.label}
                         </button>
                       );
                     })}
                   </div>
+                )}
+
+                {showInDirs && (
+                  <div className="grid grid-cols-4 gap-1 pt-0.5">
+                    {(
+                      (tr.entrance === 'wipe'
+                        ? [
+                            ['bottom', 'Bottom↑'],
+                            ['left', 'Left→'],
+                            ['right', '←Right'],
+                          ]
+                        : [
+                            ['left', 'Left'],
+                            ['right', 'Right'],
+                            ['top', 'Top'],
+                            ['bottom', 'Bottom'],
+                          ]) as Array<[TransitionDirection, string]>
+                    ).map(([dir, label]) => (
+                      <button
+                        key={dir}
+                        type="button"
+                        onClick={() =>
+                          patchTransitions({ entranceDirection: dir })
+                        }
+                        className={`py-1 rounded text-[10px] font-medium border cursor-pointer ${
+                          (tr.entranceDirection ||
+                            (tr.entrance === 'wipe' ? 'bottom' : 'left')) ===
+                          dir
+                            ? 'bg-emerald-500 text-slate-950 border-emerald-400 font-semibold'
+                            : 'bg-[#111622] border-white/8 text-slate-300'
+                        }`}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                <div className="space-y-0.5">
+                  <div className="flex justify-between text-[10px] text-slate-400">
+                    <span>Entrance Duration (0.3s – 2.0s)</span>
+                    <span className="font-mono-tabular text-emerald-300">
+                      {tr.entranceDuration.toFixed(1)}s
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    aria-label="Entrance duration"
+                    min={0.3}
+                    max={2.0}
+                    step={0.1}
+                    value={tr.entranceDuration}
+                    disabled={tr.entrance === 'none'}
+                    onChange={(e) =>
+                      patchTransitions({
+                        entranceDuration: Number(e.target.value),
+                      })
+                    }
+                    className={`w-full studio-range ${
+                      tr.entrance === 'none' ? 'opacity-45' : ''
+                    }`}
+                  />
+                </div>
+              </div>
+
+              {/* Exit Effect Selector + 0.3s - 2.0s Duration Slider */}
+              <div className="space-y-1.5 pt-2 border-t border-white/8">
+                <div className="flex items-center justify-between text-[11px]">
+                  <label
+                    htmlFor="exit-effect-select"
+                    className="font-medium text-rose-300"
+                  >
+                    Exit Effect
+                  </label>
+                  <span className="font-mono-tabular text-rose-300">
+                    {tr.exitDuration.toFixed(1)}s
+                  </span>
+                </div>
+
+                <select
+                  id="exit-effect-select"
+                  value={tr.exit}
+                  onChange={(e) =>
+                    patchTransitions({
+                      exit: e.target.value as ExitEffect,
+                    })
+                  }
+                  className="w-full h-8 px-2.5 rounded-lg bg-[#0B0E14] border border-rose-500/35 text-xs text-slate-100 focus:outline-none focus:border-rose-400 cursor-pointer"
+                >
+                  {EXIT_EFFECT_META.map((eff) => (
+                    <option key={eff.id} value={eff.id}>
+                      {eff.label}
+                    </option>
+                  ))}
+                </select>
+
+                {showEffectsGrid && (
+                  <div className="grid grid-cols-4 gap-1 pt-0.5">
+                    {EXIT_EFFECT_META.map((eff) => {
+                      const active = tr.exit === eff.id;
+                      return (
+                        <button
+                          key={eff.id}
+                          type="button"
+                          onClick={() =>
+                            patchTransitions({ exit: eff.id as ExitEffect })
+                          }
+                          className={`py-1 px-1 rounded-md text-[10px] font-medium border truncate cursor-pointer transition-colors ${
+                            active
+                              ? 'bg-rose-500/20 border-rose-400 text-rose-200 font-semibold'
+                              : 'bg-[#111622] border-white/8 text-slate-300 hover:bg-[#1E273B]'
+                          }`}
+                        >
+                          {eff.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {showOutDirs && (
+                  <div className="grid grid-cols-4 gap-1 pt-0.5">
+                    {(
+                      (tr.exit === 'wipe'
+                        ? [
+                            ['bottom', 'Bottom↑'],
+                            ['left', 'Left→'],
+                            ['right', '←Right'],
+                          ]
+                        : [
+                            ['left', 'Left'],
+                            ['right', 'Right'],
+                            ['top', 'Top'],
+                            ['bottom', 'Bottom'],
+                          ]) as Array<[TransitionDirection, string]>
+                    ).map(([dir, label]) => (
+                      <button
+                        key={dir}
+                        type="button"
+                        onClick={() =>
+                          patchTransitions({ exitDirection: dir })
+                        }
+                        className={`py-1 rounded text-[10px] font-medium border cursor-pointer ${
+                          (tr.exitDirection ||
+                            (tr.exit === 'wipe' ? 'bottom' : 'right')) === dir
+                            ? 'bg-rose-500 text-white border-rose-400 font-semibold'
+                            : 'bg-[#111622] border-white/8 text-slate-300'
+                        }`}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                <div className="space-y-0.5">
+                  <div className="flex justify-between text-[10px] text-slate-400">
+                    <span>Exit Duration (0.3s – 2.0s)</span>
+                    <span className="font-mono-tabular text-rose-300">
+                      {tr.exitDuration.toFixed(1)}s
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    aria-label="Exit duration"
+                    min={0.3}
+                    max={2.0}
+                    step={0.1}
+                    value={tr.exitDuration}
+                    disabled={tr.exit === 'none'}
+                    onChange={(e) =>
+                      patchTransitions({
+                        exitDuration: Number(e.target.value),
+                      })
+                    }
+                    className={`w-full studio-range ${
+                      tr.exit === 'none' ? 'opacity-45' : ''
+                    }`}
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Rotate, Scale & Style Swatches */}
+            <div className="p-2.5 rounded-xl bg-[#161C2B] border border-white/8 space-y-2.5">
+              <div className="space-y-1">
+                <div className="flex justify-between text-[11px]">
+                  <span className="text-slate-400">Rotate</span>
+                  <span className="font-mono-tabular text-slate-200">
+                    {rotDeg}°
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min={-180}
+                  max={180}
+                  step={5}
+                  value={rotDeg}
+                  onChange={(e) =>
+                    onUpdateActor(selectedActor.id, {
+                      rotationY: (Number(e.target.value) * Math.PI) / 180,
+                    })
+                  }
+                  className="w-full studio-range"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <div className="flex justify-between text-[11px]">
+                  <span className="text-slate-400">Scale</span>
+                  <span className="font-mono-tabular text-slate-200">
+                    {selectedActor.scale.toFixed(2)}x
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min={0.5}
+                  max={2.2}
+                  step={0.05}
+                  value={selectedActor.scale}
+                  onChange={(e) =>
+                    onUpdateActor(selectedActor.id, {
+                      scale: Number(e.target.value),
+                    })
+                  }
+                  className="w-full studio-range"
+                />
+              </div>
+
+              {swatches && (
+                <div className="flex items-center gap-2 pt-1">
+                  {swatches.map((hex) => (
+                    <button
+                      key={hex}
+                      type="button"
+                      onClick={() =>
+                        onUpdateActor(selectedActor.id, { accentColor: hex })
+                      }
+                      aria-label={`Style color ${hex}`}
+                      className={`w-6 h-6 rounded-md border cursor-pointer ${
+                        selectedActor.accentColor === hex
+                          ? 'border-white scale-110'
+                          : 'border-white/20'
+                      }`}
+                      style={{ backgroundColor: hex }}
+                    />
+                  ))}
                 </div>
               )}
+            </div>
 
-              {/* Hold Item in Hand (Left / Right) for Humanoid / Fantasy Characters */}
+            {/* Hold Item in Hand (Left / Right) for Humanoid / Fantasy Characters */}
               {selectedActor.actorType === 'character' && (
                 <div className="p-2.5 rounded-xl bg-[#161C2B] border border-white/8 space-y-2.5">
                   <div className="flex items-center justify-between gap-2">
@@ -967,621 +1539,144 @@ export function InspectorPanel({
                 </div>
               )}
 
-              {/* Visual Movement Path System (Straight Line, Freehand Curve, Multi-Turn Path) */}
-              {(() => {
-                const resolvedMp: MotionPathConfig = selectedActor.motionPath
-                  ? selectedActor.motionPath
-                  : selectedActor.walkPath?.enabled
-                    ? {
-                        enabled: true,
-                        mode: 'straight',
-                        points: [
-                          [...selectedActor.walkPath.start],
-                          [...selectedActor.walkPath.end],
-                        ],
-                        cornerStyle: 'sharp',
-                      }
-                    : {
-                        enabled: false,
-                        mode: 'straight',
-                        points: [
-                          [...selectedActor.position],
-                          [
-                            Number(
-                              Math.min(5.8, selectedActor.position[0] + 2.6).toFixed(2)
-                            ),
-                            selectedActor.position[1],
-                          ],
-                        ],
-                        cornerStyle: 'rounded',
-                      };
+          </div>
+        );
+      }
 
-                const switchMode = (nextMode: MotionPathMode) => {
-                  const basePts =
-                    resolvedMp.points.length >= 2
-                      ? resolvedMp.points
-                      : ([
-                          [...selectedActor.position],
-                          [
-                            Number(
-                              Math.min(5.8, selectedActor.position[0] + 2.6).toFixed(2)
-                            ),
-                            selectedActor.position[1],
-                          ],
-                        ] as Array<[number, number]>);
-
-                  const nextPts: Array<[number, number]> =
-                    nextMode === 'straight'
-                      ? [basePts[0], basePts[basePts.length - 1]]
-                      : basePts;
-
-                  onUpdateActor(selectedActor.id, {
-                    motionPath: {
-                      enabled: true,
-                      mode: nextMode,
-                      points: nextPts,
-                      cornerStyle:
-                        nextMode === 'multiPoint'
-                          ? resolvedMp.cornerStyle || 'rounded'
-                          : nextMode === 'freehand'
-                            ? 'rounded'
-                            : 'sharp',
-                    },
-                    walkPath: undefined,
-                  });
-                  onSetMotionPathEditMode(
-                    nextMode === 'freehand'
-                      ? 'drawFreehand'
-                      : nextMode === 'multiPoint'
-                        ? 'addWaypoint'
-                        : 'idle'
-                  );
-                };
-
-                const reversePath = () => {
-                  if (resolvedMp.points.length < 2) return;
-                  const rev = [...resolvedMp.points].reverse();
-                  onUpdateActor(selectedActor.id, {
-                    position: [...rev[0]],
-                    motionPath: { ...resolvedMp, enabled: true, points: rev },
-                    walkPath: undefined,
-                  });
-                };
-
-                const clearPath = () => {
-                  onSetMotionPathEditMode('idle');
-                  onUpdateActor(selectedActor.id, {
-                    motionPath: undefined,
-                    walkPath: undefined,
-                  });
-                };
-
+      // Built-In 3D Library & On Stage Cast Picker View
+      return (
+        <div className="space-y-4">
+          {/* Cast on Stage (Quick Tap to Open Model Controls) */}
+          <section className="space-y-2">
+            <div className="flex items-center justify-between gap-2">
+              <h2 className="text-xs font-semibold text-slate-200">
+                On Stage ({activeScene.actors.length})
+              </h2>
+              <span className="text-[10px] text-amber-300/90">
+                Tap actor for Motion & Effects
+              </span>
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {activeScene.actors.map((actor) => {
+                const isSel = actor.id === selectedActorId;
                 return (
-                  <div className="p-2.5 rounded-xl bg-[#161C2B] border border-white/8 space-y-2.5">
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="text-xs font-medium text-slate-200 flex items-center gap-1.5">
-                        <Route className="w-3.5 h-3.5 text-sky-400" />
-                        <span>Motion Path</span>
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const nextEnabled = !resolvedMp.enabled;
-                          if (!nextEnabled) onSetMotionPathEditMode('idle');
-                          onUpdateActor(selectedActor.id, {
-                            motionPath: { ...resolvedMp, enabled: nextEnabled },
-                            walkPath: undefined,
-                          });
-                        }}
-                        className={`px-2 py-0.5 rounded text-[11px] font-semibold cursor-pointer ${
-                          resolvedMp.enabled
-                            ? 'bg-emerald-500 text-slate-950'
-                            : 'bg-white/10 text-slate-300'
-                        }`}
-                      >
-                        {resolvedMp.enabled ? 'Active' : 'Enable'}
-                      </button>
-                    </div>
-
-                    {/* 3 Selectable Path Modes */}
-                    <div className="grid grid-cols-3 gap-1 bg-[#0B0E14] p-1 rounded-lg border border-white/10">
-                      {(
-                        [
-                          ['straight', 'Straight'],
-                          ['freehand', 'Freehand'],
-                          ['multiPoint', 'Multi-Turn'],
-                        ] as Array<[MotionPathMode, string]>
-                      ).map(([m, label]) => {
-                        const active = resolvedMp.enabled && resolvedMp.mode === m;
-                        return (
-                          <button
-                            key={m}
-                            type="button"
-                            onClick={() => switchMode(m)}
-                            className={`py-1.5 px-1 rounded-md text-[10px] font-medium cursor-pointer transition-colors whitespace-nowrap ${
-                              active
-                                ? 'bg-sky-500 text-slate-950 font-semibold'
-                                : 'text-slate-300 hover:bg-white/5'
-                            }`}
-                          >
-                            {label}
-                          </button>
-                        );
-                      })}
-                    </div>
-
-                    {resolvedMp.enabled && (
-                      <div className="space-y-2">
-                        {resolvedMp.mode === 'straight' && (
-                          <>
-                            <div className="text-[11px] font-mono-tabular text-slate-400 flex justify-between">
-                              <span>
-                                A: ({resolvedMp.points[0]?.[0].toFixed(1)},{' '}
-                                {resolvedMp.points[0]?.[1].toFixed(1)})
-                              </span>
-                              <span>
-                                B: (
-                                {resolvedMp.points[
-                                  resolvedMp.points.length - 1
-                                ]?.[0].toFixed(1)}
-                                ,{' '}
-                                {resolvedMp.points[
-                                  resolvedMp.points.length - 1
-                                ]?.[1].toFixed(1)}
-                                )
-                              </span>
-                            </div>
-                            <button
-                              type="button"
-                              onClick={() =>
-                                onSetMotionPathEditMode(
-                                  motionPathEditMode === 'pickEnd' ? 'idle' : 'pickEnd'
-                                )
-                              }
-                              className={`w-full py-1.5 px-2.5 rounded-lg text-xs font-medium border cursor-pointer ${
-                                motionPathEditMode === 'pickEnd'
-                                  ? 'bg-amber-500 text-slate-950 border-amber-400 font-semibold'
-                                  : 'bg-[#1D2538] hover:bg-[#242E45] text-amber-300 border-amber-500/35'
-                              }`}
-                            >
-                              {motionPathEditMode === 'pickEnd'
-                                ? 'Tap 3D Ground Now...'
-                                : 'Set Point B on 3D Ground'}
-                            </button>
-                            <p className="text-[10px] text-slate-400">
-                              Drag green Start (A) or amber End (B) handles on stage.
-                            </p>
-                          </>
-                        )}
-
-                        {resolvedMp.mode === 'freehand' && (
-                          <>
-                            <button
-                              type="button"
-                              onClick={() =>
-                                onSetMotionPathEditMode(
-                                  motionPathEditMode === 'drawFreehand'
-                                    ? 'idle'
-                                    : 'drawFreehand'
-                                )
-                              }
-                              className={`w-full py-1.5 px-2.5 rounded-lg text-xs font-medium border flex items-center justify-center gap-1.5 cursor-pointer ${
-                                motionPathEditMode === 'drawFreehand'
-                                  ? 'bg-amber-500 text-slate-950 border-amber-400 font-semibold'
-                                  : 'bg-[#1D2538] hover:bg-[#242E45] text-sky-300 border-sky-400/35'
-                              }`}
-                            >
-                              <PenTool className="w-3.5 h-3.5" />
-                              <span>
-                                {motionPathEditMode === 'drawFreehand'
-                                  ? 'Drawing... Drag on 3D Ground'
-                                  : 'Draw Freehand Path on Stage'}
-                              </span>
-                            </button>
-                            <div className="text-[10px] font-mono-tabular text-slate-400 flex justify-between">
-                              <span>Catmull-Rom smooth curve</span>
-                              <span>{resolvedMp.points.length} pts</span>
-                            </div>
-                          </>
-                        )}
-
-                        {resolvedMp.mode === 'multiPoint' && (
-                          <>
-                            <div className="flex gap-1.5">
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  onSetMotionPathEditMode(
-                                    motionPathEditMode === 'addWaypoint'
-                                      ? 'idle'
-                                      : 'addWaypoint'
-                                  )
-                                }
-                                className={`flex-1 py-1.5 px-2 rounded-lg text-[11px] font-medium border cursor-pointer ${
-                                  motionPathEditMode === 'addWaypoint'
-                                    ? 'bg-amber-500 text-slate-950 border-amber-400 font-semibold'
-                                    : 'bg-[#1D2538] hover:bg-[#242E45] text-sky-300 border-sky-400/35'
-                                }`}
-                              >
-                                {motionPathEditMode === 'addWaypoint'
-                                  ? 'Done Adding Points'
-                                  : 'Tap Ground to Add Turns'}
-                              </button>
-                              <button
-                                type="button"
-                                disabled={resolvedMp.points.length <= 2}
-                                onClick={() => {
-                                  if (resolvedMp.points.length <= 2) return;
-                                  onUpdateActor(selectedActor.id, {
-                                    motionPath: {
-                                      ...resolvedMp,
-                                      points: resolvedMp.points.slice(0, -1),
-                                    },
-                                  });
-                                }}
-                                className="px-2.5 py-1.5 rounded-lg bg-[#111622] hover:bg-[#1E273B] disabled:opacity-40 border border-white/10 text-[11px] text-slate-300 cursor-pointer"
-                              >
-                                Undo Pt
-                              </button>
-                            </div>
-
-                            <div className="grid grid-cols-2 gap-1">
-                              {(
-                                [
-                                  ['rounded', 'Rounded Curves'],
-                                  ['sharp', 'Sharp Corners'],
-                                ] as const
-                              ).map(([cs, label]) => {
-                                const active =
-                                  (resolvedMp.cornerStyle || 'rounded') === cs;
-                                return (
-                                  <button
-                                    key={cs}
-                                    type="button"
-                                    onClick={() =>
-                                      onUpdateActor(selectedActor.id, {
-                                        motionPath: {
-                                          ...resolvedMp,
-                                          cornerStyle: cs,
-                                        },
-                                      })
-                                    }
-                                    className={`py-1 px-2 rounded-md text-[10px] font-medium border cursor-pointer ${
-                                      active
-                                        ? 'bg-sky-500/20 border-sky-400 text-sky-200'
-                                        : 'bg-[#111622] border-white/8 text-slate-300'
-                                    }`}
-                                  >
-                                    {label}
-                                  </button>
-                                );
-                              })}
-                            </div>
-
-                            <div className="text-[10px] font-mono-tabular text-slate-400 flex justify-between">
-                              <span>Drag any waypoint node on stage</span>
-                              <span>{resolvedMp.points.length} waypoints</span>
-                            </div>
-                          </>
-                        )}
-
-                        {/* Reverse & Clear Actions */}
-                        <div className="grid grid-cols-2 gap-1.5 pt-1 border-t border-white/8">
-                          <button
-                            type="button"
-                            onClick={reversePath}
-                            className="py-1.5 px-2 rounded-lg bg-[#111622] hover:bg-[#1E273B] border border-white/10 text-[11px] font-medium text-slate-200 flex items-center justify-center gap-1 cursor-pointer"
-                          >
-                            <ArrowLeftRight className="w-3 h-3 text-sky-400" />
-                            <span>Reverse Path</span>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={clearPath}
-                            className="py-1.5 px-2 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/25 text-[11px] font-medium text-rose-300 flex items-center justify-center gap-1 cursor-pointer"
-                          >
-                            <Trash2 className="w-3 h-3" />
-                            <span>Clear Path</span>
-                          </button>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                );
-              })()}
-
-              {/* Dedicated Entrance & Exit Effects Section */}
-              {(() => {
-                const tr: EntranceExitConfig = selectedActor.transitions || {
-                  entrance: 'none',
-                  entranceDuration: 0.8,
-                  entranceDirection: 'left',
-                  exit: 'none',
-                  exitDuration: 0.8,
-                  exitDirection: 'right',
-                };
-
-                const patchTransitions = (patch: Partial<EntranceExitConfig>) => {
-                  onUpdateActor(selectedActor.id, {
-                    transitions: { ...tr, ...patch },
-                  });
-                };
-
-                const showInDirs = tr.entrance === 'flyIn' || tr.entrance === 'wipe';
-                const showOutDirs = tr.exit === 'flyOut' || tr.exit === 'wipe';
-
-                return (
-                  <div className="p-2.5 rounded-xl bg-[#161C2B] border border-white/8 space-y-3">
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="text-xs font-medium text-slate-200 flex items-center gap-1.5">
-                        <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-                        <span>Entrance & Exit</span>
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => onPreviewActorTransitions(selectedActor)}
-                        className="px-2 py-0.5 rounded bg-amber-500/20 hover:bg-amber-500/30 border border-amber-400/40 text-[10px] font-semibold text-amber-300 flex items-center gap-1 cursor-pointer"
-                      >
-                        <Play className="w-2.5 h-2.5 fill-current" />
-                        <span>Preview</span>
-                      </button>
-                    </div>
-
-                    {/* Entrance Effects (15 Options) */}
-                    <div className="space-y-1.5">
-                      <div className="flex items-center justify-between text-[11px]">
-                        <span className="font-medium text-emerald-300">
-                          Entrance Effect
-                        </span>
-                        <span className="font-mono-tabular text-slate-300">
-                          {tr.entranceDuration.toFixed(1)}s
-                        </span>
-                      </div>
-
-                      <div className="grid grid-cols-3 gap-1">
-                        {ENTRANCE_EFFECT_META.map((eff) => {
-                          const active = tr.entrance === eff.id;
-                          return (
-                            <button
-                              key={eff.id}
-                              type="button"
-                              onClick={() =>
-                                patchTransitions({
-                                  entrance: eff.id as EntranceEffect,
-                                })
-                              }
-                              className={`py-1.5 px-1 rounded-md text-[10px] font-medium border truncate cursor-pointer transition-colors ${
-                                active
-                                  ? 'bg-emerald-500/20 border-emerald-400 text-emerald-200 font-semibold'
-                                  : 'bg-[#111622] border-white/8 text-slate-300 hover:bg-[#1E273B]'
-                              }`}
-                            >
-                              {eff.label}
-                            </button>
-                          );
-                        })}
-                      </div>
-
-                      {showInDirs && (
-                        <div className="grid grid-cols-4 gap-1 pt-0.5">
-                          {(
-                            (tr.entrance === 'wipe'
-                              ? [
-                                  ['bottom', 'Bottom↑'],
-                                  ['left', 'Left→'],
-                                  ['right', '←Right'],
-                                ]
-                              : [
-                                  ['left', 'Left'],
-                                  ['right', 'Right'],
-                                  ['top', 'Top'],
-                                  ['bottom', 'Bottom'],
-                                ]) as Array<[TransitionDirection, string]>
-                          ).map(([dir, label]) => (
-                            <button
-                              key={dir}
-                              type="button"
-                              onClick={() =>
-                                patchTransitions({ entranceDirection: dir })
-                              }
-                              className={`py-1 rounded text-[10px] font-medium border cursor-pointer ${
-                                (tr.entranceDirection ||
-                                  (tr.entrance === 'wipe' ? 'bottom' : 'left')) ===
-                                dir
-                                  ? 'bg-emerald-500 text-slate-950 border-emerald-400 font-semibold'
-                                  : 'bg-[#111622] border-white/8 text-slate-300'
-                              }`}
-                            >
-                              {label}
-                            </button>
-                          ))}
-                        </div>
-                      )}
-
-                      {tr.entrance !== 'none' && (
-                        <div className="space-y-0.5 pt-0.5">
-                          <div className="flex justify-between text-[10px] text-slate-400">
-                            <span>Entrance Duration</span>
-                            <span className="font-mono-tabular text-emerald-300">
-                              {tr.entranceDuration.toFixed(1)}s
-                            </span>
-                          </div>
-                          <input
-                            type="range"
-                            min={0.3}
-                            max={2.0}
-                            step={0.1}
-                            value={tr.entranceDuration}
-                            onChange={(e) =>
-                              patchTransitions({
-                                entranceDuration: Number(e.target.value),
-                              })
-                            }
-                            className="w-full studio-range"
-                          />
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Exit Effects (7 Options + None) */}
-                    <div className="space-y-1.5 pt-2 border-t border-white/8">
-                      <div className="flex items-center justify-between text-[11px]">
-                        <span className="font-medium text-rose-300">Exit Effect</span>
-                        <span className="font-mono-tabular text-slate-300">
-                          {tr.exitDuration.toFixed(1)}s
-                        </span>
-                      </div>
-
-                      <div className="grid grid-cols-4 gap-1">
-                        {EXIT_EFFECT_META.map((eff) => {
-                          const active = tr.exit === eff.id;
-                          return (
-                            <button
-                              key={eff.id}
-                              type="button"
-                              onClick={() =>
-                                patchTransitions({ exit: eff.id as ExitEffect })
-                              }
-                              className={`py-1.5 px-1 rounded-md text-[10px] font-medium border truncate cursor-pointer transition-colors ${
-                                active
-                                  ? 'bg-rose-500/20 border-rose-400 text-rose-200 font-semibold'
-                                  : 'bg-[#111622] border-white/8 text-slate-300 hover:bg-[#1E273B]'
-                              }`}
-                            >
-                              {eff.label}
-                            </button>
-                          );
-                        })}
-                      </div>
-
-                      {showOutDirs && (
-                        <div className="grid grid-cols-4 gap-1 pt-0.5">
-                          {(
-                            (tr.exit === 'wipe'
-                              ? [
-                                  ['bottom', 'Bottom↑'],
-                                  ['left', 'Left→'],
-                                  ['right', '←Right'],
-                                ]
-                              : [
-                                  ['left', 'Left'],
-                                  ['right', 'Right'],
-                                  ['top', 'Top'],
-                                  ['bottom', 'Bottom'],
-                                ]) as Array<[TransitionDirection, string]>
-                          ).map(([dir, label]) => (
-                            <button
-                              key={dir}
-                              type="button"
-                              onClick={() =>
-                                patchTransitions({ exitDirection: dir })
-                              }
-                              className={`py-1 rounded text-[10px] font-medium border cursor-pointer ${
-                                (tr.exitDirection ||
-                                  (tr.exit === 'wipe' ? 'bottom' : 'right')) ===
-                                dir
-                                  ? 'bg-rose-500 text-white border-rose-400 font-semibold'
-                                  : 'bg-[#111622] border-white/8 text-slate-300'
-                              }`}
-                            >
-                              {label}
-                            </button>
-                          ))}
-                        </div>
-                      )}
-
-                      {tr.exit !== 'none' && (
-                        <div className="space-y-0.5 pt-0.5">
-                          <div className="flex justify-between text-[10px] text-slate-400">
-                            <span>Exit Duration</span>
-                            <span className="font-mono-tabular text-rose-300">
-                              {tr.exitDuration.toFixed(1)}s
-                            </span>
-                          </div>
-                          <input
-                            type="range"
-                            min={0.3}
-                            max={2.0}
-                            step={0.1}
-                            value={tr.exitDuration}
-                            onChange={(e) =>
-                              patchTransitions({
-                                exitDuration: Number(e.target.value),
-                              })
-                            }
-                            className="w-full studio-range"
-                          />
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                );
-              })()}
-
-              {/* Rotate & Scale */}
-              <div className="space-y-1">
-                <div className="flex justify-between text-[11px]">
-                  <span className="text-slate-400">Rotate</span>
-                  <span className="font-mono-tabular text-slate-200">{rotDeg}°</span>
-                </div>
-                <input
-                  type="range"
-                  min={-180}
-                  max={180}
-                  step={5}
-                  value={rotDeg}
-                  onChange={(e) =>
-                    onUpdateActor(selectedActor.id, {
-                      rotationY: (Number(e.target.value) * Math.PI) / 180,
-                    })
-                  }
-                  className="w-full studio-range"
-                />
-              </div>
-
-              <div className="space-y-1">
-                <div className="flex justify-between text-[11px]">
-                  <span className="text-slate-400">Scale</span>
-                  <span className="font-mono-tabular text-slate-200">
-                    {selectedActor.scale.toFixed(2)}x
-                  </span>
-                </div>
-                <input
-                  type="range"
-                  min={0.5}
-                  max={2.2}
-                  step={0.05}
-                  value={selectedActor.scale}
-                  onChange={(e) =>
-                    onUpdateActor(selectedActor.id, { scale: Number(e.target.value) })
-                  }
-                  className="w-full studio-range"
-                />
-              </div>
-
-              {/* Color Swatches */}
-              {swatches && (
-                <div className="flex items-center gap-2 pt-1">
-                  {swatches.map((hex) => (
-                    <button
-                      key={hex}
-                      type="button"
-                      onClick={() =>
-                        onUpdateActor(selectedActor.id, { accentColor: hex })
-                      }
-                      aria-label={`Style color ${hex}`}
-                      className={`w-6 h-6 rounded-md border cursor-pointer ${
-                        selectedActor.accentColor === hex
-                          ? 'border-white scale-110'
-                          : 'border-white/20'
-                      }`}
-                      style={{ backgroundColor: hex }}
+                  <button
+                    key={actor.id}
+                    type="button"
+                    onClick={() => onSelectActor(actor.id)}
+                    className={`px-2.5 py-1.5 rounded-lg text-xs font-medium border flex items-center gap-1.5 transition-colors cursor-pointer ${
+                      isSel
+                        ? 'bg-amber-500 text-slate-950 border-amber-400 font-semibold'
+                        : 'bg-[#171E2E] text-slate-300 border-white/10 hover:bg-[#1E273B]'
+                    }`}
+                  >
+                    <span
+                      className="w-2 h-2 rounded-full shrink-0"
+                      style={{
+                        backgroundColor: isSel ? '#0f172a' : actor.accentColor,
+                      }}
                     />
-                  ))}
+                    <span className="truncate max-w-[110px]">{actor.name}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </section>
+
+          {/* Permanent Built-In 3D Library */}
+          <section className="space-y-2 pt-3 border-t border-white/8">
+            <div className="flex items-center justify-between">
+              <h2 className="text-xs font-semibold text-slate-200">
+                Built-In 3D Library
+              </h2>
+              <span className="text-[10px] text-slate-400">Tap model to add</span>
+            </div>
+
+            {/* 4 Category Tabs */}
+            <div className="grid grid-cols-4 gap-1 bg-[#0B0E14] p-1 rounded-lg border border-white/8">
+              {(
+                [
+                  ['characters', 'People', <Users key="u" className="w-3 h-3" />],
+                  ['animals', 'Animals', <PawPrint key="p" className="w-3 h-3" />],
+                  ['vehicles', 'Vehicles', <Car key="v" className="w-3 h-3" />],
+                  ['props', 'Props', <Package key="pr" className="w-3 h-3" />],
+                ] as Array<[BuiltInLibraryCategory, string, React.ReactNode]>
+              ).map(([cat, label, icon]) => (
+                <button
+                  key={cat}
+                  type="button"
+                  onClick={() => setLibraryCategory(cat)}
+                  className={`py-1.5 px-1 rounded-md text-[10px] font-medium flex flex-col items-center gap-0.5 cursor-pointer transition-colors ${
+                    libraryCategory === cat
+                      ? 'bg-amber-500 text-slate-950 font-semibold'
+                      : 'text-slate-300 hover:bg-white/5'
+                  }`}
+                >
+                  {icon}
+                  <span className="truncate max-w-full">{label}</span>
+                </button>
+              ))}
+            </div>
+
+            {/* Search Input */}
+            <div className="relative">
+              <Search className="w-3.5 h-3.5 text-slate-500 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+              <input
+                type="text"
+                value={librarySearch}
+                onChange={(e) => setLibrarySearch(e.target.value)}
+                placeholder="Search models..."
+                className="w-full h-8 pl-8 pr-2.5 rounded-lg bg-[#0B0E14] border border-white/10 text-xs text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-amber-500"
+              />
+            </div>
+
+            {/* Model Grid with 3D Thumbnails */}
+            <div className="grid grid-cols-2 gap-2 max-h-[380px] overflow-y-auto studio-scroll pr-0.5">
+              {libraryItems.map((item) => {
+                const thumbKey = getThumbnailKey(item.actorType, item.kind);
+                const thumbUrl = thumbMap[thumbKey];
+                return (
+                  <button
+                    key={`${item.actorType}-${item.kind}`}
+                    type="button"
+                    onClick={() =>
+                      onOpenLibraryPicker(item.actorType, item.kind, item.label)
+                    }
+                    className="p-1.5 rounded-xl bg-[#171E2E] hover:bg-[#1E273B] border border-white/10 hover:border-amber-400/50 text-left transition-all cursor-pointer flex flex-col gap-1.5 group"
+                  >
+                    <div className="h-24 w-full rounded-lg bg-[radial-gradient(circle_at_50%_38%,#27344f_0%,#0f1523_85%)] border border-white/5 flex items-center justify-center overflow-hidden relative">
+                      {thumbUrl ? (
+                        <img
+                          src={thumbUrl}
+                          alt={item.label}
+                          className="w-full h-full object-contain transition-transform duration-200 group-hover:scale-105"
+                          draggable={false}
+                        />
+                      ) : (
+                        <Box className="w-6 h-6 text-slate-500 animate-pulse" />
+                      )}
+                      <span className="absolute top-1.5 right-1.5 w-5 h-5 rounded-md bg-black/45 text-amber-400 flex items-center justify-center opacity-80 group-hover:opacity-100 group-hover:bg-amber-500 group-hover:text-slate-950 transition-colors">
+                        <Plus className="w-3 h-3" />
+                      </span>
+                    </div>
+                    <div className="min-w-0 px-0.5 pb-0.5">
+                      <div className="text-[11px] font-semibold text-slate-100 truncate">
+                        {item.label}
+                      </div>
+                      <div className="text-[10px] text-slate-400 truncate capitalize">
+                        {item.sub || item.actorType}
+                      </div>
+                    </div>
+                  </button>
+                );
+              })}
+              {libraryItems.length === 0 && (
+                <div className="col-span-2 text-center py-3 text-xs text-slate-500">
+                  No matching models.
                 </div>
               )}
-            </section>
-          )}
+            </div>
+          </section>
         </div>
       );
     }
@@ -2043,7 +2138,12 @@ export function InspectorPanel({
               <button
                 key={tab.id}
                 type="button"
-                onClick={() => onChangeTab(tab.id)}
+                onClick={() => {
+                  if (tab.id === 'cast' && modelControlsOpen) {
+                    onCloseModelControls();
+                  }
+                  onChangeTab(tab.id);
+                }}
                 className={`py-2.5 px-1 flex flex-col items-center justify-center gap-1 text-[10px] font-medium border-b-2 transition-colors cursor-pointer ${
                   active
                     ? 'border-amber-500 text-amber-300 bg-[#161D2C]'
@@ -2072,8 +2172,10 @@ export function InspectorPanel({
           />
           <div className="max-h-[72dvh] flex flex-col rounded-t-2xl bg-[#111622] border-t border-white/15 shadow-2xl overflow-hidden">
             <div className="flex items-center justify-between px-4 py-2.5 border-b border-white/10 bg-[#0E131D]">
-              <span className="text-xs font-semibold text-amber-300">
-                {tabs.find((t) => t.id === activeTab)?.label}
+              <span className="text-xs font-semibold text-amber-300 truncate">
+                {activeTab === 'cast' && modelControlsOpen && selectedActor
+                  ? `Model Controls: ${selectedActor.name}`
+                  : tabs.find((t) => t.id === activeTab)?.label}
               </span>
               <button
                 type="button"
