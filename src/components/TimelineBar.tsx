@@ -36,6 +36,7 @@ interface TimelineBarProps {
   onSelectScene: (id: string) => void;
   onSelectActor: (id: string) => void;
   onScrubTimeline: (sec: number) => void;
+  onScrubStateChange?: (scrubbing: boolean) => void;
   onAddScene: () => void;
   onDuplicateScene: (id: string) => void;
   onReorderScene: (id: string, dir: -1 | 1) => void;
@@ -70,6 +71,8 @@ interface DraggableBarProps {
   label: string;
   barClass: string;
   selected?: boolean;
+  entrancePct?: number;
+  exitPct?: number;
   onClick?: () => void;
   onChangeRange: (nextStart: number, nextEnd: number) => void;
 }
@@ -81,6 +84,8 @@ function DraggableTrackBar({
   label,
   barClass,
   selected,
+  entrancePct = 0,
+  exitPct = 0,
   onClick,
   onChangeRange,
 }: DraggableBarProps) {
@@ -148,18 +153,32 @@ function DraggableTrackBar({
       }`}
       title={`${label} (${clampedStart.toFixed(1)}s–${clampedEnd.toFixed(1)}s)`}
     >
+      {/* Entrance & Exit duration overlays */}
+      {entrancePct > 0 && (
+        <div
+          className="pointer-events-none absolute left-0 top-0 bottom-0 bg-emerald-400/25 border-r border-emerald-400/50"
+          style={{ width: `${Math.min(48, entrancePct)}%` }}
+        />
+      )}
+      {exitPct > 0 && (
+        <div
+          className="pointer-events-none absolute right-0 top-0 bottom-0 bg-rose-400/25 border-l border-rose-400/50"
+          style={{ width: `${Math.min(48, exitPct)}%` }}
+        />
+      )}
+
       {/* Left Start Handle */}
       <div
         onPointerDown={(e) => startDrag(e, 'left')}
         aria-label="Adjust start time"
-        className="w-2 h-full -ml-1.5 shrink-0 cursor-ew-resize hover:bg-white/30 flex items-center justify-center"
+        className="relative z-10 w-2 h-full -ml-1.5 shrink-0 cursor-ew-resize hover:bg-white/30 flex items-center justify-center"
       >
         <span className="w-0.5 h-3 bg-white/60 rounded-full" />
       </div>
 
-      <span className="truncate px-1 flex-1">{label}</span>
+      <span className="relative z-10 truncate px-1 flex-1">{label}</span>
 
-      <span className="font-mono-tabular text-[9px] opacity-80 shrink-0 hidden sm:inline mr-1">
+      <span className="relative z-10 font-mono-tabular text-[9px] opacity-80 shrink-0 hidden sm:inline mr-1">
         {clampedStart.toFixed(1)}–{clampedEnd.toFixed(1)}s
       </span>
 
@@ -167,7 +186,7 @@ function DraggableTrackBar({
       <div
         onPointerDown={(e) => startDrag(e, 'right')}
         aria-label="Adjust end time"
-        className="w-2 h-full -mr-1.5 shrink-0 cursor-ew-resize hover:bg-white/30 flex items-center justify-center"
+        className="relative z-10 w-2 h-full -mr-1.5 shrink-0 cursor-ew-resize hover:bg-white/30 flex items-center justify-center"
       >
         <span className="w-0.5 h-3 bg-white/60 rounded-full" />
       </div>
@@ -185,6 +204,7 @@ export function TimelineBar({
   onSelectScene,
   onSelectActor,
   onScrubTimeline,
+  onScrubStateChange,
   onAddScene,
   onDuplicateScene,
   onReorderScene,
@@ -262,7 +282,7 @@ export function TimelineBar({
   };
 
   return (
-    <footer className="shrink-0 bg-[#111622] border-t border-white/10 px-2.5 sm:px-5 py-2 space-y-2 z-20">
+    <footer className="shrink min-h-0 max-h-[48dvh] overflow-y-auto studio-scroll bg-[#111622] border-t border-white/10 px-2.5 sm:px-5 py-2 space-y-2 z-20">
       {/* Top Row: Play Controls + Playhead Time + Tracks Toggle + Duration Slider */}
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-1.5 sm:gap-2">
@@ -341,11 +361,19 @@ export function TimelineBar({
       <div
         ref={trackRef}
         onPointerDown={(e) => {
+          onScrubStateChange?.(true);
           handleTrackPointer(e.clientX);
+          try {
+            e.currentTarget.setPointerCapture(e.pointerId);
+          } catch {
+            // ignore
+          }
         }}
         onPointerMove={(e) => {
           if (e.buttons === 1) handleTrackPointer(e.clientX);
         }}
+        onPointerUp={() => onScrubStateChange?.(false)}
+        onPointerCancel={() => onScrubStateChange?.(false)}
         role="slider"
         aria-label="Story playhead"
         aria-valuemin={0}
@@ -481,15 +509,28 @@ export function TimelineBar({
 
       {/* Multi-Layer Timeline Tracks for Active Scene */}
       {tracksExpanded && activeScene && (
-        <div className="rounded-xl bg-[#0D121C] border border-white/10 overflow-hidden">
+        <div className="rounded-xl bg-[#0D121C] border border-white/10 max-h-[210px] overflow-y-auto studio-scroll">
           {/* Ruler Header */}
-          <div className="grid grid-cols-[118px_1fr] sm:grid-cols-[152px_1fr] border-b border-white/10 bg-[#0B0F18] text-[10px] text-slate-400">
+          <div className="sticky top-0 z-20 grid grid-cols-[118px_1fr] sm:grid-cols-[152px_1fr] border-b border-white/10 bg-[#0B0F18] text-[10px] text-slate-400">
             <div className="px-2.5 py-1 font-medium text-slate-300 border-r border-white/10 truncate">
               {activeScene.title} Layers
             </div>
             <div
-              onPointerDown={(e) => handleRulerPointer(e.clientX, e.currentTarget)}
-              className="relative px-2 py-1 flex items-center justify-between font-mono-tabular cursor-pointer select-none"
+              onPointerDown={(e) => {
+                onScrubStateChange?.(true);
+                handleRulerPointer(e.clientX, e.currentTarget);
+                try {
+                  e.currentTarget.setPointerCapture(e.pointerId);
+                } catch {
+                  // ignore
+                }
+              }}
+              onPointerMove={(e) => {
+                if (e.buttons === 1) handleRulerPointer(e.clientX, e.currentTarget);
+              }}
+              onPointerUp={() => onScrubStateChange?.(false)}
+              onPointerCancel={() => onScrubStateChange?.(false)}
+              className="relative px-2 py-1 flex items-center justify-between font-mono-tabular cursor-pointer select-none touch-none"
             >
               <span>0.0s</span>
               <span>{(activeScene.duration * 0.5).toFixed(1)}s</span>
@@ -501,7 +542,7 @@ export function TimelineBar({
             </div>
           </div>
 
-          <div className="max-h-32 overflow-y-auto studio-scroll divide-y divide-white/8">
+          <div className="divide-y divide-white/8">
             {/* Track (a): Characters & Activities */}
             <div className="grid grid-cols-[118px_1fr] sm:grid-cols-[152px_1fr]">
               <div className="px-2.5 py-1.5 border-r border-white/10 flex items-center gap-1.5 text-[10px] font-medium text-sky-300 bg-[#101624]">
@@ -513,22 +554,41 @@ export function TimelineBar({
                   className="pointer-events-none absolute top-0 bottom-0 w-px bg-rose-500/70 z-10"
                   style={{ left: `${scenePlayheadPct}%` }}
                 />
-                {activeScene.actors.map((actor) => (
-                  <div key={`act-${actor.id}`} className="relative h-6 w-full">
-                    <DraggableTrackBar
-                      start={actor.startTime ?? 0}
-                      end={actor.endTime ?? activeScene.duration}
-                      duration={activeScene.duration}
-                      label={`${actor.name} · ${actor.animation}`}
-                      barClass="bg-sky-500/20 border-sky-400/55 text-sky-100 hover:bg-sky-500/30"
-                      selected={actor.id === selectedActorId}
-                      onClick={() => onSelectActor(actor.id)}
-                      onChangeRange={(ns, ne) =>
-                        onUpdateActorTiming(actor.id, 'activity', ns, ne)
-                      }
-                    />
-                  </div>
-                ))}
+                {activeScene.actors.map((actor) => {
+                  const aStart = actor.startTime ?? 0;
+                  const aEnd = actor.endTime ?? activeScene.duration;
+                  const aSpan = Math.max(0.4, aEnd - aStart);
+                  const trIn = actor.transitions?.entrance && actor.transitions.entrance !== 'none' ? actor.transitions.entrance : null;
+                  const trOut = actor.transitions?.exit && actor.transitions.exit !== 'none' ? actor.transitions.exit : null;
+                  const hasPath = Boolean(actor.motionPath?.enabled || actor.walkPath?.enabled);
+                  const inPct = trIn ? ((actor.transitions?.entranceDuration ?? 0.8) / aSpan) * 100 : 0;
+                  const outPct = trOut ? ((actor.transitions?.exitDuration ?? 0.8) / aSpan) * 100 : 0;
+                  const extras = [
+                    hasPath ? 'Path' : null,
+                    trIn ? `In:${trIn}` : null,
+                    trOut ? `Out:${trOut}` : null,
+                  ].filter(Boolean);
+                  const barLabel = `${actor.name} · ${actor.animation}${extras.length ? ` · ${extras.join(' ')}` : ''}`;
+
+                  return (
+                    <div key={`act-${actor.id}`} className="relative h-6 w-full">
+                      <DraggableTrackBar
+                        start={aStart}
+                        end={aEnd}
+                        duration={activeScene.duration}
+                        label={barLabel}
+                        barClass="bg-sky-500/20 border-sky-400/55 text-sky-100 hover:bg-sky-500/30"
+                        selected={actor.id === selectedActorId}
+                        entrancePct={inPct}
+                        exitPct={outPct}
+                        onClick={() => onSelectActor(actor.id)}
+                        onChangeRange={(ns, ne) =>
+                          onUpdateActorTiming(actor.id, 'activity', ns, ne)
+                        }
+                      />
+                    </div>
+                  );
+                })}
                 {activeScene.actors.length === 0 && (
                   <div className="h-6 flex items-center px-2 text-[10px] text-slate-500">
                     Add a character from 3D Library

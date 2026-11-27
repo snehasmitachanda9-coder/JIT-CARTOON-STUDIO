@@ -47,6 +47,14 @@ import {
   EnvironmentHandle,
 } from './environments';
 import {
+  buildMotionCurve,
+  MotionPathVisualizer,
+  resolveActorMotionPath,
+  sampleMotionCurve,
+  simplifyFreehandPoints,
+} from './motionPath';
+import { ActorTransitionController } from './transitions';
+import {
   createCustomModelRig,
   createPropRig,
   createVehicleRig,
@@ -63,7 +71,11 @@ const _dragOffset = new THREE.Vector3();
 const _camGoalPos = new THREE.Vector3();
 const _camGoalTarget = new THREE.Vector3();
 const _zoomDir = new THREE.Vector3();
+const _pathPos = new THREE.Vector3();
+const _pathTan = new THREE.Vector3();
 const _groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+
+export type MotionPathEditMode = 'idle' | 'pickEnd' | 'drawFreehand' | 'addWaypoint';
 
 function detectSoftwareGl(): boolean {
   try {
@@ -89,10 +101,16 @@ export interface StudioViewportHandle {
   } | null;
 }
 
-type UnifiedRigEntry =
+type UnifiedRigEntry = (
   | { kindTag: 'character'; rig: CharacterRig; actor: SceneActor }
   | { kindTag: 'animal'; rig: AnimalRig; actor: SceneActor }
-  | { kindTag: 'propOrCustom'; rig: PropOrCustomRig; actor: SceneActor };
+  | { kindTag: 'propOrCustom'; rig: PropOrCustomRig; actor: SceneActor }
+) & {
+  transitionCtrl: ActorTransitionController;
+  cachedPathSig: string;
+  cachedCurve: THREE.Curve<THREE.Vector3> | null;
+  cachedCurveLength: number;
+};
 
 interface StudioViewportProps {
   environment: EnvironmentId;
@@ -101,6 +119,8 @@ interface StudioViewportProps {
   selectedActorId: string | null;
   aspectRatio: AspectRatioMode;
   isPlaying: boolean;
+  isScrubbing: boolean;
+  isExporting: boolean;
   sceneProgress: number; // 0..1 within active scene
   sceneDuration: number;
   baseCameraPose: CameraPose;
@@ -108,11 +128,16 @@ interface StudioViewportProps {
   cameraStartTime?: number;
   cameraEndTime?: number;
   cameraPoseTrigger: { pose: CameraPose; seq: number } | null;
-  pickingWalkTargetForId: string | null;
+  motionPathEditMode: MotionPathEditMode;
   audioManager: StudioAudioManager;
   onSelectActor: (id: string | null) => void;
   onMoveActor: (id: string, x: number, z: number) => void;
-  onPickWalkTarget: (actorId: string, x: number, z: number) => void;
+  onUpdateMotionPathPoints: (
+    actorId: string,
+    points: Array<[number, number]>,
+    options?: { commit?: boolean; exitEditMode?: boolean }
+  ) => void;
+  onAppendMotionWaypoint: (actorId: string, x: number, z: number) => void;
 }
 
 export const StudioViewport = forwardRef<StudioViewportHandle, StudioViewportProps>(
@@ -124,6 +149,8 @@ export const StudioViewport = forwardRef<StudioViewportHandle, StudioViewportPro
       selectedActorId,
       aspectRatio,
       isPlaying,
+      isScrubbing,
+      isExporting,
       sceneProgress,
       sceneDuration,
       baseCameraPose,
@@ -131,11 +158,12 @@ export const StudioViewport = forwardRef<StudioViewportHandle, StudioViewportPro
       cameraStartTime,
       cameraEndTime,
       cameraPoseTrigger,
-      pickingWalkTargetForId,
+      motionPathEditMode,
       audioManager,
       onSelectActor,
       onMoveActor,
-      onPickWalkTarget,
+      onUpdateMotionPathPoints,
+      onAppendMotionWaypoint,
     },
     ref
   ) {
@@ -145,6 +173,7 @@ export const StudioViewport = forwardRef<StudioViewportHandle, StudioViewportPro
     const [contextLost, setContextLost] = useState(false);
 
     const exportOverrideRef = useRef<{ width: number; height: number } | null>(null);
+    const exportActiveLocalRef = useRef(false);
     const syncSizeRef = useRef<(() => void) | null>(null);
 
     const propsRef = useRef({
@@ -152,16 +181,19 @@ export const StudioViewport = forwardRef<StudioViewportHandle, StudioViewportPro
       selectedActorId,
       aspectRatio,
       isPlaying,
+      isScrubbing,
+      isExporting,
       sceneProgress,
       sceneDuration,
       baseCameraPose,
       cameraZoom,
       cameraStartTime,
       cameraEndTime,
-      pickingWalkTargetForId,
+      motionPathEditMode,
       onSelectActor,
       onMoveActor,
-      onPickWalkTarget,
+      onUpdateMotionPathPoints,
+      onAppendMotionWaypoint,
       audioManager,
     });
     propsRef.current = {
@@ -169,16 +201,19 @@ export const StudioViewport = forwardRef<StudioViewportHandle, StudioViewportPro
       selectedActorId,
       aspectRatio,
       isPlaying,
+      isScrubbing,
+      isExporting,
       sceneProgress,
       sceneDuration,
       baseCameraPose,
       cameraZoom,
       cameraStartTime,
       cameraEndTime,
-      pickingWalkTargetForId,
+      motionPathEditMode,
       onSelectActor,
       onMoveActor,
-      onPickWalkTarget,
+      onUpdateMotionPathPoints,
+      onAppendMotionWaypoint,
       audioManager,
     };
 
@@ -193,10 +228,7 @@ export const StudioViewport = forwardRef<StudioViewportHandle, StudioViewportPro
       envHandle: EnvironmentHandle | null;
       currentEnvId: EnvironmentId | null;
       rigs: Map<string, UnifiedRigEntry>;
-      pathHelperGroup: THREE.Group;
-      pathLine: THREE.Line;
-      markerStart: THREE.Mesh;
-      markerEnd: THREE.Mesh;
+      motionPathViz: MotionPathVisualizer;
       camTransitionActive: boolean;
       maxAnisotropy: number;
       isSoftwareGl: boolean;
@@ -237,6 +269,12 @@ export const StudioViewport = forwardRef<StudioViewportHandle, StudioViewportPro
         const targetH = ratio === '9:16' ? 1920 : ratio === '1:1' ? 1080 : 1080;
 
         exportOverrideRef.current = { width: targetW, height: targetH };
+        exportActiveLocalRef.current = true;
+        inst.motionPathViz.group.visible = false;
+        inst.rigs.forEach((entry) => {
+          entry.rig.selectionRing.visible = false;
+        });
+
         inst.renderer.setPixelRatio(1);
         inst.renderer.setSize(targetW, targetH, false);
         inst.camera.aspect = targetW / targetH;
@@ -245,6 +283,7 @@ export const StudioViewport = forwardRef<StudioViewportHandle, StudioViewportPro
 
         const restoreViewportResolution = () => {
           exportOverrideRef.current = null;
+          exportActiveLocalRef.current = false;
           if (!threeRef.current) return;
           threeRef.current.renderer.setPixelRatio(
             threeRef.current.isSoftwareGl ? 1 : Math.min(window.devicePixelRatio, 2)
@@ -329,6 +368,7 @@ export const StudioViewport = forwardRef<StudioViewportHandle, StudioViewportPro
       renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
       renderer.shadowMap.enabled = !isSoftwareGl;
       renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+      renderer.localClippingEnabled = true;
       renderer.domElement.style.width = '100%';
       renderer.domElement.style.height = '100%';
       renderer.domElement.style.display = 'block';
@@ -394,29 +434,9 @@ export const StudioViewport = forwardRef<StudioViewportHandle, StudioViewportPro
       rimLight.position.set(-7, 8, -10);
       scene.add(rimLight);
 
-      // Walk Path Helper Visuals (only visible in edit mode)
-      const pathHelperGroup = new THREE.Group();
-      const lineGeo = new THREE.BufferGeometry().setFromPoints([
-        new THREE.Vector3(0, 0.05, 0),
-        new THREE.Vector3(1, 0.05, 0),
-      ]);
-      const lineMat = new THREE.LineBasicMaterial({ color: 0xf59e0b });
-      const pathLine = new THREE.Line(lineGeo, lineMat);
-      const markerStart = new THREE.Mesh(
-        new THREE.RingGeometry(0.18, 0.28, 24),
-        new THREE.MeshBasicMaterial({ color: 0x10b981, side: THREE.DoubleSide })
-      );
-      markerStart.rotation.x = -Math.PI / 2;
-      markerStart.position.y = 0.04;
-      const markerEnd = new THREE.Mesh(
-        new THREE.RingGeometry(0.2, 0.34, 24),
-        new THREE.MeshBasicMaterial({ color: 0xf59e0b, side: THREE.DoubleSide })
-      );
-      markerEnd.rotation.x = -Math.PI / 2;
-      markerEnd.position.y = 0.04;
-      pathHelperGroup.add(pathLine, markerStart, markerEnd);
-      pathHelperGroup.visible = false;
-      scene.add(pathHelperGroup);
+      // 3D Motion Path Visualizer (only visible in edit mode, never during video export)
+      const motionPathViz = new MotionPathVisualizer();
+      scene.add(motionPathViz.group);
 
       const maxAnisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy() || 4);
       const rigs = new Map<string, UnifiedRigEntry>();
@@ -432,10 +452,7 @@ export const StudioViewport = forwardRef<StudioViewportHandle, StudioViewportPro
         envHandle: null,
         currentEnvId: null,
         rigs,
-        pathHelperGroup,
-        pathLine,
-        markerStart,
-        markerEnd,
+        motionPathViz,
         camTransitionActive: false,
         maxAnisotropy,
         isSoftwareGl,
@@ -461,9 +478,11 @@ export const StudioViewport = forwardRef<StudioViewportHandle, StudioViewportPro
       const resizeObserver = new ResizeObserver(syncSize);
       resizeObserver.observe(frameEl);
 
-      // Raycasting: Click to Select, Drag to Move on Ground, or Pick Walk Path Point B
+      // Raycasting: Select/Drag Actors, Drag Path Waypoints, Draw Freehand Path, or Add Multi-Point Turns
       const raycaster = new THREE.Raycaster();
       let draggingId: string | null = null;
+      let draggingWaypoint: { actorId: string; index: number; points: Array<[number, number]> } | null = null;
+      let freehandDraft: Array<[number, number]> | null = null;
       let pointerDownPos = { x: 0, y: 0 };
       let hasMovedDuringPointer = false;
 
@@ -484,6 +503,11 @@ export const StudioViewport = forwardRef<StudioViewportHandle, StudioViewportPro
         return null;
       };
 
+      const clampGroundPoint = (pt: THREE.Vector3): [number, number] => [
+        Number(THREE.MathUtils.clamp(pt.x, -7.8, 7.8).toFixed(2)),
+        Number(THREE.MathUtils.clamp(pt.z, -6.5, 6.5).toFixed(2)),
+      ];
+
       const onPointerDown = (ev: PointerEvent) => {
         if (ev.button !== 0 && ev.pointerType === 'mouse') return;
         pointerDownPos = { x: ev.clientX, y: ev.clientY };
@@ -492,18 +516,80 @@ export const StudioViewport = forwardRef<StudioViewportHandle, StudioViewportPro
         updateNdc(ev.clientX, ev.clientY);
         raycaster.setFromCamera(_pointerNdc, camera);
 
-        // If user is picking Point B for Walk Path, tap ground to set destination
-        if (propsRef.current.pickingWalkTargetForId) {
+        const {
+          motionPathEditMode: editMode,
+          selectedActorId: selId,
+          actors: curActors,
+          isPlaying: playingNow,
+        } = propsRef.current;
+
+        if (!playingNow && selId && editMode === 'pickEnd') {
           ev.stopImmediatePropagation();
           if (raycaster.ray.intersectPlane(_groundPlane, _hitPoint)) {
-            const nx = THREE.MathUtils.clamp(_hitPoint.x, -7.8, 7.8);
-            const nz = THREE.MathUtils.clamp(_hitPoint.z, -6.5, 6.5);
-            propsRef.current.onPickWalkTarget(
-              propsRef.current.pickingWalkTargetForId,
-              Number(nx.toFixed(2)),
-              Number(nz.toFixed(2))
-            );
+            const [nx, nz] = clampGroundPoint(_hitPoint);
+            const selActor = curActors.find((a) => a.id === selId);
+            const existingMp = selActor ? resolveActorMotionPath(selActor) : null;
+            const startPt: [number, number] =
+              existingMp?.points[0] ?? (selActor ? [...selActor.position] : [0, 0]);
+            propsRef.current.onUpdateMotionPathPoints(selId, [startPt, [nx, nz]], {
+              commit: true,
+              exitEditMode: true,
+            });
           }
+          return;
+        }
+
+        if (!playingNow && selId && editMode === 'drawFreehand') {
+          ev.stopImmediatePropagation();
+          if (raycaster.ray.intersectPlane(_groundPlane, _hitPoint)) {
+            const [nx, nz] = clampGroundPoint(_hitPoint);
+            freehandDraft = [[nx, nz]];
+            controls.enabled = false;
+            motionPathViz.syncLiveFreehand(freehandDraft);
+            try {
+              renderer.domElement.setPointerCapture(ev.pointerId);
+            } catch {
+              // ignore
+            }
+          }
+          return;
+        }
+
+        // In idle edit mode, check draggable Motion Path waypoint handles first
+        if (!playingNow && selId && editMode === 'idle') {
+          const handles = motionPathViz.getDraggableHandles();
+          if (handles.length > 0) {
+            const handleHits = raycaster.intersectObjects(handles, false);
+            if (handleHits.length > 0) {
+              const wpIdx = handleHits[0].object.userData.waypointIndex;
+              const selActor = curActors.find((a) => a.id === selId);
+              const existingMp = selActor ? resolveActorMotionPath(selActor) : null;
+              if (
+                typeof wpIdx === 'number' &&
+                existingMp &&
+                wpIdx >= 0 &&
+                wpIdx < existingMp.points.length
+              ) {
+                ev.stopImmediatePropagation();
+                draggingWaypoint = {
+                  actorId: selId,
+                  index: wpIdx,
+                  points: existingMp.points.map(([x, z]) => [x, z] as [number, number]),
+                };
+                controls.enabled = false;
+                try {
+                  renderer.domElement.setPointerCapture(ev.pointerId);
+                } catch {
+                  // ignore
+                }
+                return;
+              }
+            }
+          }
+        }
+
+        if (editMode === 'addWaypoint') {
+          // Let tap add a waypoint in pointerUp while preserving camera drag if user orbits
           return;
         }
 
@@ -542,6 +628,34 @@ export const StudioViewport = forwardRef<StudioViewportHandle, StudioViewportPro
           hasMovedDuringPointer = true;
         }
 
+        if (freehandDraft) {
+          updateNdc(ev.clientX, ev.clientY);
+          raycaster.setFromCamera(_pointerNdc, camera);
+          if (raycaster.ray.intersectPlane(_groundPlane, _hitPoint)) {
+            const [nx, nz] = clampGroundPoint(_hitPoint);
+            const prev = freehandDraft[freehandDraft.length - 1];
+            if (!prev || Math.hypot(nx - prev[0], nz - prev[1]) >= 0.22) {
+              freehandDraft.push([nx, nz]);
+              motionPathViz.syncLiveFreehand(freehandDraft);
+            }
+          }
+          return;
+        }
+
+        if (draggingWaypoint) {
+          updateNdc(ev.clientX, ev.clientY);
+          raycaster.setFromCamera(_pointerNdc, camera);
+          if (raycaster.ray.intersectPlane(_groundPlane, _hitPoint)) {
+            const [nx, nz] = clampGroundPoint(_hitPoint);
+            draggingWaypoint.points[draggingWaypoint.index] = [nx, nz];
+            const copy = draggingWaypoint.points.map(([x, z]) => [x, z] as [number, number]);
+            propsRef.current.onUpdateMotionPathPoints(draggingWaypoint.actorId, copy, {
+              commit: false,
+            });
+          }
+          return;
+        }
+
         if (!draggingId) return;
         updateNdc(ev.clientX, ev.clientY);
         raycaster.setFromCamera(_pointerNdc, camera);
@@ -558,6 +672,44 @@ export const StudioViewport = forwardRef<StudioViewportHandle, StudioViewportPro
       };
 
       const onPointerUp = (ev: PointerEvent) => {
+        if (freehandDraft) {
+          const raw = freehandDraft;
+          freehandDraft = null;
+          controls.enabled = true;
+          try {
+            renderer.domElement.releasePointerCapture(ev.pointerId);
+          } catch {
+            // ignore
+          }
+          const selId = propsRef.current.selectedActorId;
+          if (selId && raw.length >= 2) {
+            const simplified = simplifyFreehandPoints(raw, 26);
+            if (simplified.length >= 2) {
+              propsRef.current.onUpdateMotionPathPoints(selId, simplified, {
+                commit: true,
+                exitEditMode: true,
+              });
+            }
+          }
+          return;
+        }
+
+        if (draggingWaypoint) {
+          const dw = draggingWaypoint;
+          draggingWaypoint = null;
+          controls.enabled = true;
+          try {
+            renderer.domElement.releasePointerCapture(ev.pointerId);
+          } catch {
+            // ignore
+          }
+          const copy = dw.points.map(([x, z]) => [x, z] as [number, number]);
+          propsRef.current.onUpdateMotionPathPoints(dw.actorId, copy, {
+            commit: true,
+          });
+          return;
+        }
+
         if (draggingId) {
           draggingId = null;
           controls.enabled = true;
@@ -569,7 +721,26 @@ export const StudioViewport = forwardRef<StudioViewportHandle, StudioViewportPro
           return;
         }
 
-        if (!hasMovedDuringPointer && !propsRef.current.pickingWalkTargetForId) {
+        if (
+          !hasMovedDuringPointer &&
+          !propsRef.current.isPlaying &&
+          propsRef.current.selectedActorId &&
+          propsRef.current.motionPathEditMode === 'addWaypoint'
+        ) {
+          updateNdc(ev.clientX, ev.clientY);
+          raycaster.setFromCamera(_pointerNdc, camera);
+          if (raycaster.ray.intersectPlane(_groundPlane, _hitPoint)) {
+            const [nx, nz] = clampGroundPoint(_hitPoint);
+            propsRef.current.onAppendMotionWaypoint(
+              propsRef.current.selectedActorId,
+              nx,
+              nz
+            );
+          }
+          return;
+        }
+
+        if (!hasMovedDuringPointer && propsRef.current.motionPathEditMode === 'idle') {
           updateNdc(ev.clientX, ev.clientY);
           raycaster.setFromCamera(_pointerNdc, camera);
           const roots: THREE.Object3D[] = [];
@@ -623,6 +794,8 @@ export const StudioViewport = forwardRef<StudioViewportHandle, StudioViewportPro
         if (inst) {
           const {
             isPlaying: playing,
+            isScrubbing: scrubbing,
+            isExporting: exportingProp,
             sceneProgress: sProg,
             sceneDuration: sDur,
             baseCameraPose: baseCam,
@@ -631,6 +804,7 @@ export const StudioViewport = forwardRef<StudioViewportHandle, StudioViewportPro
             cameraEndTime: camEndRaw,
           } = propsRef.current;
 
+          const exportingNow = exportingProp || exportActiveLocalRef.current;
           const safeDur = Math.max(0.5, sDur || 6);
           const sceneTime = sProg * safeDur;
           const camStart = camStartRaw ?? 0;
@@ -638,7 +812,9 @@ export const StudioViewport = forwardRef<StudioViewportHandle, StudioViewportPro
           const camSpan = Math.max(0.2, camEnd - camStart);
           const camProg = THREE.MathUtils.clamp((sceneTime - camStart) / camSpan, 0, 1);
 
-          if (playing && zoomMode !== 'none') {
+          const previewTimeline = playing || exportingNow || scrubbing || sceneTime > 0.005;
+
+          if ((playing || (previewTimeline && !inst.camTransitionActive)) && zoomMode !== 'none') {
             _camGoalTarget.set(...baseCam.target);
             _camGoalPos.set(...baseCam.position);
             _zoomDir.copy(_camGoalPos).sub(_camGoalTarget);
@@ -647,7 +823,7 @@ export const StudioViewport = forwardRef<StudioViewportHandle, StudioViewportPro
                 ? THREE.MathUtils.lerp(1.0, 0.62, camProg)
                 : THREE.MathUtils.lerp(0.7, 1.25, camProg);
             _camGoalPos.copy(_camGoalTarget).addScaledVector(_zoomDir, zoomFactor);
-            const k = 1 - Math.exp(-5.0 * delta);
+            const k = playing ? 1 - Math.exp(-5.0 * delta) : 1;
             camera.position.lerp(_camGoalPos, k);
             controls.target.lerp(_camGoalTarget, k);
           } else if (inst.camTransitionActive) {
@@ -682,11 +858,18 @@ export const StudioViewport = forwardRef<StudioViewportHandle, StudioViewportPro
             'Swim',
           ];
 
+          // Always hide 3D path guides during export or active movie playback
+          if (playing || exportingNow) {
+            inst.motionPathViz.group.visible = false;
+          }
+
+          const animClockTime = !playing && (scrubbing || sceneTime > 0.005) ? sceneTime : elapsed;
+
           inst.rigs.forEach((entry) => {
             const { actor } = entry;
             const actStart = actor.startTime ?? 0;
             const actEnd = actor.endTime ?? safeDur;
-            const actInWindow = !playing || (sceneTime >= actStart && sceneTime <= actEnd);
+            const actInWindow = !previewTimeline || (sceneTime >= actStart && sceneTime <= actEnd);
             const actProg = THREE.MathUtils.clamp(
               (sceneTime - actStart) / Math.max(0.2, actEnd - actStart),
               0,
@@ -695,26 +878,78 @@ export const StudioViewport = forwardRef<StudioViewportHandle, StudioViewportPro
 
             let activeAnim: AnimationState = actInWindow ? actor.animation : 'Idle';
 
-            // Walk / Chase / Drive / Flight Path Point A -> Point B interpolation during playback
-            if (playing && actor.walkPath?.enabled) {
-              const [ax, az] = actor.walkPath.start;
-              const [bx, bz] = actor.walkPath.end;
-              const px = THREE.MathUtils.lerp(ax, bx, actProg);
-              const pz = THREE.MathUtils.lerp(az, bz, actProg);
-              entry.rig.root.position.set(px, 0, pz);
-              const dx = bx - ax;
-              const dz = bz - az;
-              if (Math.hypot(dx, dz) > 0.05) {
-                entry.rig.root.rotation.y = Math.atan2(dx, dz);
+            let baseX = actor.position[0];
+            let baseZ = actor.position[1];
+            let baseRotY = actor.rotationY;
+
+            // Motion Path interpolation (Straight, Freehand Curve, Multi-Turn)
+            const mp = resolveActorMotionPath(actor);
+            if (mp) {
+              const mpSig = JSON.stringify({
+                m: mp.mode,
+                c: mp.cornerStyle || 'rounded',
+                p: mp.points,
+              });
+              if (mpSig !== entry.cachedPathSig) {
+                entry.cachedPathSig = mpSig;
+                entry.cachedCurve = buildMotionCurve(mp);
+                entry.cachedCurveLength = entry.cachedCurve ? entry.cachedCurve.getLength() : 0;
               }
-              if (actInWindow && !travelAnims.includes(actor.animation)) {
-                activeAnim = actor.actorType === 'vehicle' ? 'Drive/Ride Forward' : 'Walk';
+            } else {
+              entry.cachedPathSig = '';
+              entry.cachedCurve = null;
+              entry.cachedCurveLength = 0;
+            }
+
+            if (mp && entry.cachedCurve && previewTimeline) {
+              sampleMotionCurve(entry.cachedCurve, actProg, _pathPos, _pathTan);
+              baseX = _pathPos.x;
+              baseZ = _pathPos.z;
+              if (entry.cachedCurveLength > 0.05) {
+                baseRotY = Math.atan2(_pathTan.x, _pathTan.z);
+                if (actInWindow && !travelAnims.includes(actor.animation)) {
+                  activeAnim =
+                    actor.actorType === 'vehicle'
+                      ? actor.kind === 'helicopter' || actor.kind === 'airplane'
+                        ? 'Fly in Sky'
+                        : actor.kind === 'boat'
+                          ? 'Sail on Water'
+                          : 'Drive/Ride Forward'
+                      : actor.actorType === 'animal'
+                        ? actor.kind === 'bird'
+                          ? 'Fly'
+                          : actor.kind === 'fish'
+                            ? 'Swim'
+                            : 'Walk'
+                        : 'Walk';
+                }
               }
             }
 
+            // Apply Entrance & Exit Effects (synced to timeline bar, previewed in real time & export)
+            const isVisible = entry.transitionCtrl.apply({
+              rigRoot: entry.rig.root,
+              speechSprite: entry.rig.speechSprite,
+              selectionRing: entry.rig.selectionRing,
+              actor,
+              sceneTime,
+              sceneDuration: safeDur,
+              isPlaying: playing,
+              isScrubbing: scrubbing,
+              isExporting: exportingNow,
+              camera,
+              baseX,
+              baseZ,
+              baseRotationY: baseRotY,
+              baseScale: actor.scale,
+            });
+
+            entry.rig.selectionRing.visible =
+              isVisible && !playing && !exportingNow && actor.id === propsRef.current.selectedActorId;
+
             const propStart = actor.propStartTime ?? 0;
             const propEnd = actor.propEndTime ?? safeDur;
-            const propInWindow = !playing || (sceneTime >= propStart && sceneTime <= propEnd);
+            const propInWindow = !previewTimeline || (sceneTime >= propStart && sceneTime <= propEnd);
             if (entry.kindTag === 'character') {
               if (entry.rig.leftItemObj) entry.rig.leftItemObj.visible = propInWindow;
               if (entry.rig.rightItemObj) entry.rig.rightItemObj.visible = propInWindow;
@@ -723,8 +958,10 @@ export const StudioViewport = forwardRef<StudioViewportHandle, StudioViewportPro
             const hasDialogue = actor.dialogue.trim().length > 0;
             const voiceStart = actor.voiceStartTime ?? 0;
             const voiceEnd = actor.voiceEndTime ?? safeDur;
-            const voiceInWindow = !playing || (sceneTime >= voiceStart && sceneTime <= voiceEnd);
-            entry.rig.speechSprite.visible = hasDialogue && voiceInWindow;
+            const voiceInWindow = !previewTimeline || (sceneTime >= voiceStart && sceneTime <= voiceEnd);
+            entry.rig.speechSprite.visible = isVisible && hasDialogue && voiceInWindow;
+
+            if (!isVisible) return;
 
             const autoLipSync = playing && hasDialogue && voiceInWindow;
 
@@ -733,7 +970,7 @@ export const StudioViewport = forwardRef<StudioViewportHandle, StudioViewportPro
                 entry.rig,
                 activeAnim,
                 actor.expression,
-                elapsed,
+                animClockTime,
                 delta,
                 lipAmp,
                 autoLipSync
@@ -743,7 +980,7 @@ export const StudioViewport = forwardRef<StudioViewportHandle, StudioViewportPro
                 entry.rig,
                 activeAnim,
                 actor.expression,
-                elapsed,
+                animClockTime,
                 delta,
                 lipAmp,
                 autoLipSync
@@ -752,7 +989,7 @@ export const StudioViewport = forwardRef<StudioViewportHandle, StudioViewportPro
               updatePropOrCustomAnimation(
                 entry.rig,
                 activeAnim,
-                elapsed,
+                animClockTime,
                 delta,
                 lipAmp,
                 autoLipSync
@@ -796,14 +1033,15 @@ export const StudioViewport = forwardRef<StudioViewportHandle, StudioViewportPro
           disposeEnvironment(threeRef.current.envHandle);
         }
         rigs.forEach((entry) => {
+          entry.transitionCtrl.restoreMaterials();
           scene.remove(entry.rig.root);
           if (entry.kindTag === 'character') disposeCharacterRig(entry.rig);
           else if (entry.kindTag === 'animal') disposeAnimalRig(entry.rig);
           else disposePropOrCustomRig(entry.rig);
         });
         rigs.clear();
-        lineGeo.dispose();
-        lineMat.dispose();
+        scene.remove(motionPathViz.group);
+        motionPathViz.dispose();
         envTex.dispose();
         renderer.dispose();
         syncSizeRef.current = null;
@@ -863,6 +1101,7 @@ export const StudioViewport = forwardRef<StudioViewportHandle, StudioViewportPro
             (match.actorType !== entry.actor.actorType || match.kind !== entry.actor.kind))
         ) {
           inst.scene.remove(entry.rig.root);
+          entry.transitionCtrl.restoreMaterials();
           if (entry.kindTag === 'character') disposeCharacterRig(entry.rig);
           else if (entry.kindTag === 'animal') disposeAnimalRig(entry.rig);
           else disposePropOrCustomRig(entry.rig);
@@ -873,45 +1112,87 @@ export const StudioViewport = forwardRef<StudioViewportHandle, StudioViewportPro
       for (const actor of actors) {
         let entry = inst.rigs.get(actor.id);
         if (!entry) {
+          const transitionCtrl = new ActorTransitionController();
           if (actor.actorType === 'character') {
             const safeKind = (actor.kind === 'twins' ? 'boy' : actor.kind) as CharacterKind;
             const rig = createCharacterRig(safeKind, actor.accentColor);
             rig.root.userData.actorId = actor.id;
             inst.scene.add(rig.root);
-            entry = { kindTag: 'character', rig, actor };
+            entry = {
+              kindTag: 'character',
+              rig,
+              actor,
+              transitionCtrl,
+              cachedPathSig: '',
+              cachedCurve: null,
+              cachedCurveLength: 0,
+            };
           } else if (actor.actorType === 'animal') {
             const rig = createAnimalRig(actor.kind as AnimalKind, actor.accentColor);
             rig.root.userData.actorId = actor.id;
             inst.scene.add(rig.root);
-            entry = { kindTag: 'animal', rig, actor };
+            entry = {
+              kindTag: 'animal',
+              rig,
+              actor,
+              transitionCtrl,
+              cachedPathSig: '',
+              cachedCurve: null,
+              cachedCurveLength: 0,
+            };
           } else if (actor.actorType === 'vehicle') {
             const rig = createVehicleRig(actor.kind as VehicleKind, actor.accentColor);
             rig.root.userData.actorId = actor.id;
             inst.scene.add(rig.root);
-            entry = { kindTag: 'propOrCustom', rig, actor };
+            entry = {
+              kindTag: 'propOrCustom',
+              rig,
+              actor,
+              transitionCtrl,
+              cachedPathSig: '',
+              cachedCurve: null,
+              cachedCurveLength: 0,
+            };
           } else if (actor.actorType === 'custom' && actor.customBlueprint) {
             const rig = createCustomModelRig(actor.customBlueprint);
             rig.root.userData.actorId = actor.id;
             inst.scene.add(rig.root);
-            entry = { kindTag: 'propOrCustom', rig, actor };
+            entry = {
+              kindTag: 'propOrCustom',
+              rig,
+              actor,
+              transitionCtrl,
+              cachedPathSig: '',
+              cachedCurve: null,
+              cachedCurveLength: 0,
+            };
           } else {
             const rig = createPropRig(actor.kind as PropKind, actor.accentColor);
             rig.root.userData.actorId = actor.id;
             inst.scene.add(rig.root);
-            entry = { kindTag: 'propOrCustom', rig, actor };
+            entry = {
+              kindTag: 'propOrCustom',
+              rig,
+              actor,
+              transitionCtrl,
+              cachedPathSig: '',
+              cachedCurve: null,
+              cachedCurveLength: 0,
+            };
           }
           inst.rigs.set(actor.id, entry);
         }
 
         entry.actor = actor;
 
-        // When not playing, keep actor positioned at its edit position
-        if (!isPlaying) {
+        // When parked at t=0 in edit mode, keep actor positioned at its edit position
+        if (!isPlaying && !isScrubbing && sceneProgress <= 0.001) {
           entry.rig.root.position.set(actor.position[0], 0, actor.position[1]);
           entry.rig.root.rotation.y = actor.rotationY;
+          entry.rig.root.scale.setScalar(actor.scale);
         }
-        entry.rig.root.scale.setScalar(actor.scale);
-        entry.rig.selectionRing.visible = !isPlaying && actor.id === selectedActorId;
+        entry.rig.selectionRing.visible =
+          !isPlaying && !isExporting && actor.id === selectedActorId;
 
         if (entry.kindTag === 'character') {
           updateCharacterAccentColor(entry.rig, actor.accentColor);
@@ -928,22 +1209,13 @@ export const StudioViewport = forwardRef<StudioViewportHandle, StudioViewportPro
         }
       }
 
-      // Walk Path Helper
-      const selActor = actors.find((a) => a.id === selectedActorId);
-      if (!isPlaying && selActor?.walkPath?.enabled) {
-        const [ax, az] = selActor.walkPath.start;
-        const [bx, bz] = selActor.walkPath.end;
-        inst.markerStart.position.set(ax, 0.04, az);
-        inst.markerEnd.position.set(bx, 0.04, bz);
-        inst.pathLine.geometry.setFromPoints([
-          new THREE.Vector3(ax, 0.05, az),
-          new THREE.Vector3(bx, 0.05, bz),
-        ]);
-        inst.pathHelperGroup.visible = true;
-      } else {
-        inst.pathHelperGroup.visible = false;
+      // Glowing 3D Motion Path Visualizer (visible in edit mode, hidden during playback & video export)
+      const selActor = actors.find((a) => a.id === selectedActorId) || null;
+      const selMp = selActor ? resolveActorMotionPath(selActor) : null;
+      if (motionPathEditMode !== 'drawFreehand') {
+        inst.motionPathViz.sync(selMp, !isPlaying && !isExporting && Boolean(selMp?.enabled));
       }
-    }, [actors, selectedActorId, isPlaying]);
+    }, [actors, selectedActorId, isPlaying, isScrubbing, isExporting, sceneProgress, motionPathEditMode]);
 
     // 5. Responsive Aspect Ratio Frame (16:9 / 9:16 / 1:1)
     const [boxSize, setBoxSize] = useState<{ width: number; height: number }>({
@@ -957,7 +1229,7 @@ export const StudioViewport = forwardRef<StudioViewportHandle, StudioViewportPro
 
       const recompute = () => {
         const availW = Math.max(180, outer.clientWidth - 16);
-        const availH = Math.max(160, outer.clientHeight - 16);
+        const availH = Math.max(244, outer.clientHeight - 16);
         const targetRatio =
           aspectRatio === '16:9' ? 16 / 9 : aspectRatio === '9:16' ? 9 / 16 : 1;
 
@@ -979,22 +1251,26 @@ export const StudioViewport = forwardRef<StudioViewportHandle, StudioViewportPro
     return (
       <div
         ref={outerStageRef}
-        className="relative flex-1 w-full h-full flex items-center justify-center bg-[#080A0F] overflow-hidden select-none"
+        className="relative flex-1 min-h-[max(260px,42dvh)] w-full flex items-center justify-center bg-[#080A0F] overflow-hidden select-none"
       >
         <div
           ref={frameContainerRef}
           style={{ width: boxSize.width, height: boxSize.height }}
           className={`relative rounded-xl overflow-hidden border shadow-2xl bg-[#0B0E14] ${
-            pickingWalkTargetForId
+            motionPathEditMode !== 'idle'
               ? 'border-amber-400 cursor-crosshair'
               : 'border-white/10'
           }`}
         >
           <div ref={canvasMountRef} className="w-full h-full" />
 
-          {pickingWalkTargetForId && (
+          {motionPathEditMode !== 'idle' && (
             <div className="pointer-events-none absolute top-3 left-1/2 -translate-x-1/2 px-3 py-1 rounded-lg bg-[#0B0E14]/90 border border-amber-500/50 text-xs font-medium text-amber-300 whitespace-nowrap">
-              Tap 3D ground to set Walk Path Point B
+              {motionPathEditMode === 'pickEnd'
+                ? 'Tap 3D ground to set End Point (B)'
+                : motionPathEditMode === 'drawFreehand'
+                  ? 'Drag with mouse or finger on 3D ground to draw path'
+                  : 'Tap 3D ground to add corner waypoints'}
             </div>
           )}
 

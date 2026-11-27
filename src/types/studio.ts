@@ -188,6 +188,61 @@ export interface CustomModelPart {
   role: CustomPartRole;
 }
 
+export type AIModelEntityType = 'humanoid' | 'animal' | 'vehicle' | 'prop';
+
+export type HairStyleKind =
+  | 'short'
+  | 'spiky'
+  | 'ponytail'
+  | 'bob'
+  | 'curly'
+  | 'long'
+  | 'bun'
+  | 'bald';
+
+export type HeadwearKind =
+  | 'none'
+  | 'cap'
+  | 'crown'
+  | 'tiara'
+  | 'witchHat'
+  | 'wizardHat'
+  | 'chefHat'
+  | 'policeCap'
+  | 'strawHat'
+  | 'beanie'
+  | 'halo'
+  | 'wreath'
+  | 'helmet';
+
+export type OutfitStyleKind =
+  | 'tshirt'
+  | 'jacket'
+  | 'hoodie'
+  | 'superhero'
+  | 'dress'
+  | 'robe'
+  | 'overalls'
+  | 'uniform'
+  | 'labcoat'
+  | 'armor'
+  | 'saree';
+
+export interface CustomModelStyleSpec {
+  entityType: AIModelEntityType;
+  archetype?: string;
+  hairStyle?: HairStyleKind;
+  headwear?: HeadwearKind;
+  outfitStyle?: OutfitStyleKind;
+  primaryColor: string;
+  secondaryColor: string;
+  accentColor: string;
+  skinColor?: string;
+  eyeColor?: string;
+  hairColor?: string;
+  accessories?: string[];
+}
+
 export interface CustomModelBlueprint {
   id: string;
   name: string;
@@ -195,6 +250,7 @@ export interface CustomModelBlueprint {
   prompt: string;
   source: 'gemini' | 'offline';
   createdAt: number;
+  style?: CustomModelStyleSpec;
   parts: CustomModelPart[];
 }
 
@@ -208,6 +264,82 @@ export interface WalkPath {
   start: [number, number];
   end: [number, number];
 }
+
+export type MotionPathMode = 'straight' | 'freehand' | 'multiPoint';
+
+export interface MotionPathConfig {
+  enabled: boolean;
+  mode: MotionPathMode;
+  points: Array<[number, number]>; // [x, z] waypoints in meters on ground
+  cornerStyle?: 'rounded' | 'sharp';
+}
+
+export type EntranceEffect =
+  | 'none'
+  | 'appear'
+  | 'fade'
+  | 'flyIn'
+  | 'floatIn'
+  | 'split'
+  | 'wipe'
+  | 'zoom'
+  | 'swivel'
+  | 'bounce'
+  | 'expand'
+  | 'riseUp'
+  | 'stretch'
+  | 'compress'
+  | 'zoomIn';
+
+export type ExitEffect =
+  | 'none'
+  | 'disappear'
+  | 'fade'
+  | 'flyOut'
+  | 'floatOut'
+  | 'split'
+  | 'wipe'
+  | 'shape';
+
+export type TransitionDirection = 'left' | 'right' | 'top' | 'bottom';
+
+export interface EntranceExitConfig {
+  entrance: EntranceEffect;
+  entranceDuration: number; // 0.3..2.0
+  entranceDirection?: TransitionDirection;
+  exit: ExitEffect;
+  exitDuration: number; // 0.3..2.0
+  exitDirection?: TransitionDirection;
+}
+
+export const ENTRANCE_EFFECT_META: Array<{ id: EntranceEffect; label: string }> = [
+  { id: 'none', label: 'None' },
+  { id: 'appear', label: 'Appear' },
+  { id: 'fade', label: 'Fade' },
+  { id: 'flyIn', label: 'Fly In' },
+  { id: 'floatIn', label: 'Float In' },
+  { id: 'split', label: 'Split' },
+  { id: 'wipe', label: 'Wipe' },
+  { id: 'zoom', label: 'Zoom' },
+  { id: 'swivel', label: 'Swivel' },
+  { id: 'bounce', label: 'Bounce' },
+  { id: 'expand', label: 'Expand' },
+  { id: 'riseUp', label: 'Rise Up' },
+  { id: 'stretch', label: 'Stretch' },
+  { id: 'compress', label: 'Compress' },
+  { id: 'zoomIn', label: 'Zoom In' },
+];
+
+export const EXIT_EFFECT_META: Array<{ id: ExitEffect; label: string }> = [
+  { id: 'none', label: 'None' },
+  { id: 'disappear', label: 'Disappear' },
+  { id: 'fade', label: 'Fade' },
+  { id: 'flyOut', label: 'Fly Out' },
+  { id: 'floatOut', label: 'Float Out' },
+  { id: 'split', label: 'Split' },
+  { id: 'wipe', label: 'Wipe' },
+  { id: 'shape', label: 'Shape' },
+];
 
 export interface SceneAudioTrack {
   url: string;
@@ -231,6 +363,8 @@ export interface SceneActor {
   dialogue: string;
   accentColor: string;
   walkPath?: WalkPath;
+  motionPath?: MotionPathConfig;
+  transitions?: EntranceExitConfig;
   audio?: SceneAudioTrack | null;
   heldItemLeft?: HeldItemAttachment | null;
   heldItemRight?: HeldItemAttachment | null;

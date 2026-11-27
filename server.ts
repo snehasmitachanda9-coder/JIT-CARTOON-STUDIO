@@ -75,15 +75,20 @@ async function startServer() {
 
     try {
       const response = await generateWithFallback(ai, {
-        contents: `Design a stylized, recognizable, vibrant 3D cartoon model for: "${promptText}".
-Use 8 to 20 modular 3D primitive parts positioned accurately in meters (Y-up, ground is Y=0, total height around 1.4 to 2.2m for characters/creatures/vehicles).
-Assign each part an accurate joint role so it animates smoothly:
-- For characters/creatures: torso, head, jaw, leftArm, rightArm, leftLeg, rightLeg, wing, tail, prop.
-- For vehicles/carts: torso (chassis), wheel (at bottom y=wheelRadius), prop (roof/cargo/handle).
-Ensure parts overlap cleanly with zero floating pieces and bottom touches y=0.`,
+        contents: `Design a vibrant, high-detail Chibi-Pixar 3D cartoon model for: "${promptText}".
+Return BOTH:
+1) "style" metadata so our sculpted 3D character/vehicle/creature engine can render expressive glossy 3D eyes, volumetric hair, sculpted outfits/capes/hats/wings, curved vehicle silhouettes, or sculpted animal features:
+   - entityType: "humanoid" (any person, hero, boy, girl, robot, wizard, king, astronaut, ninja, etc.), "animal" (dog, cat, dragon, dino, lion, bird, monster, creature, unicorn, etc.), "vehicle" (car, bus, truck, bike, boat, helicopter, airplane, spaceship, cart, train), or "prop" (buildings, trees, items, castles, swords, chests, etc.).
+   - archetype: concise archetype word (e.g., "boy", "girl", "superhero", "wizard", "robot", "dragon", "dino", "lion", "car", "schoolBus", "policeCar", "helicopter", "airplane", "boat", "castle", "sword", etc.).
+   - hairStyle: one of "short", "spiky", "ponytail", "bob", "curly", "long", "bun" (for humanoids).
+   - headwear: one of "none", "cap", "beanie", "crown", "tiara", "witchHat", "wizardHat", "helmet", "policeCap", "chefHat", "strawHat", "halo", "wreath".
+   - outfitStyle: one of "tshirt", "hoodie", "jacket", "dress", "robe", "uniform", "overalls", "labcoat", "superhero", "armor", "saree".
+   - primaryColor, secondaryColor, accentColor, skinColor, eyeColor, hairColor: vibrant #RRGGBB hex colors.
+   - accessories: array chosen from ["cape", "backpack", "gloves", "glasses", "mask", "wings", "fairyWings", "angelWings", "beard", "moustache", "horns", "catEars", "bunnyEars", "stethoscope", "watch", "cargoPockets"].
+2) "parts": 8 to 18 smooth modular 3D primitive parts (prefer sphere, cylinder, cone, torus; avoid harsh cubes) positioned accurately in meters (Y-up, ground Y=0, height ~1.4-2.2m) with accurate joint roles (torso, head, jaw, leftArm, rightArm, leftLeg, rightLeg, wheel, wing, tail, prop).`,
         config: {
           systemInstruction:
-            'You are a senior 3D technical artist building clean, appealing procedural Three.js cartoon models.',
+            'You are a lead Pixar-style 3D character & asset artist designing appealing, expressive cartoon models with rich color palettes and sculpted silhouettes.',
           responseMimeType: 'application/json',
           responseSchema: {
             type: Type.OBJECT,
@@ -93,6 +98,41 @@ Ensure parts overlap cleanly with zero floating pieces and bottom touches y=0.`,
                 type: Type.STRING,
                 description: 'One of: character, creature, vehicle, prop',
               },
+              style: {
+                type: Type.OBJECT,
+                properties: {
+                  entityType: {
+                    type: Type.STRING,
+                    description: 'One of: humanoid, animal, vehicle, prop',
+                  },
+                  archetype: { type: Type.STRING },
+                  hairStyle: {
+                    type: Type.STRING,
+                    description: 'One of: short, spiky, ponytail, bob, curly, long, bun',
+                  },
+                  headwear: {
+                    type: Type.STRING,
+                    description:
+                      'One of: none, cap, beanie, crown, tiara, witchHat, wizardHat, helmet, policeCap, chefHat, strawHat, halo, wreath',
+                  },
+                  outfitStyle: {
+                    type: Type.STRING,
+                    description:
+                      'One of: tshirt, hoodie, jacket, dress, robe, uniform, overalls, labcoat, superhero, armor, saree',
+                  },
+                  primaryColor: { type: Type.STRING },
+                  secondaryColor: { type: Type.STRING },
+                  accentColor: { type: Type.STRING },
+                  skinColor: { type: Type.STRING },
+                  eyeColor: { type: Type.STRING },
+                  hairColor: { type: Type.STRING },
+                  accessories: {
+                    type: Type.ARRAY,
+                    items: { type: Type.STRING },
+                  },
+                },
+                required: ['entityType', 'primaryColor', 'secondaryColor', 'accentColor'],
+              },
               parts: {
                 type: Type.ARRAY,
                 items: {
@@ -101,7 +141,7 @@ Ensure parts overlap cleanly with zero floating pieces and bottom touches y=0.`,
                     name: { type: Type.STRING },
                     geometry: {
                       type: Type.STRING,
-                      description: 'One of: sphere, box, cylinder, cone, torus',
+                      description: 'One of: sphere, cylinder, cone, torus, box',
                     },
                     position: {
                       type: Type.ARRAY,
@@ -139,7 +179,7 @@ Ensure parts overlap cleanly with zero floating pieces and bottom touches y=0.`,
                 },
               },
             },
-            required: ['name', 'category', 'parts'],
+            required: ['name', 'category', 'style', 'parts'],
           },
         },
       });

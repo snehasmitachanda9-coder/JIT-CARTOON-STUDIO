@@ -23,7 +23,11 @@ import {
 import { ActorTrackField, TimelineBar } from './components/TimelineBar';
 import { TopHeader } from './components/TopHeader';
 import { useOnlineStatus } from './hooks/useOnlineStatus';
-import { StudioViewport, StudioViewportHandle } from './three/StudioViewport';
+import {
+  MotionPathEditMode,
+  StudioViewport,
+  StudioViewportHandle,
+} from './three/StudioViewport';
 import {
   ActorType,
   ANIMAL_META,
@@ -280,9 +284,9 @@ export default function App() {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [activeTab, setActiveTab] = useState<InspectorTab>('cast');
   const [mobileSheetOpen, setMobileSheetOpen] = useState(false);
-  const [pickingWalkTargetForId, setPickingWalkTargetForId] = useState<string | null>(
-    null
-  );
+  const [motionPathEditMode, setMotionPathEditMode] =
+    useState<MotionPathEditMode>('idle');
+  const [isScrubbing, setIsScrubbing] = useState(false);
   const [customModels, setCustomModels] =
     useState<CustomModelBlueprint[]>(loadSavedCustomModels);
   const [activityModalTarget, setActivityModalTarget] =
@@ -496,6 +500,7 @@ export default function App() {
   const handleSelectScene = useCallback(
     (id: string) => {
       setIsPlaying(false);
+      setMotionPathEditMode('idle');
       setActiveSceneId(id);
       const found = scenes.find((s) => s.id === id);
       if (found) {
@@ -633,7 +638,10 @@ export default function App() {
   );
 
   const handleSelectActor = useCallback((id: string | null) => {
-    setSelectedActorId(id);
+    setSelectedActorId((prev) => {
+      if (prev !== id) setMotionPathEditMode('idle');
+      return id;
+    });
     if (id) {
       setActiveTab('cast');
     }
@@ -826,22 +834,41 @@ export default function App() {
   // Dragging moves update position smoothly without spamming 60 undo entries per second
   const handleMoveActor = useCallback(
     (actorId: string, x: number, z: number) => {
+      const clampX = (v: number) => Number(Math.max(-7.8, Math.min(7.8, v)).toFixed(2));
+      const clampZ = (v: number) => Number(Math.max(-6.5, Math.min(6.5, v)).toFixed(2));
       setScenesRaw((prev) =>
         prev.map((s) =>
           s.id === activeSceneId
             ? {
                 ...s,
-                actors: s.actors.map((a) =>
-                  a.id === actorId
-                    ? {
-                        ...a,
-                        position: [x, z],
-                        walkPath: a.walkPath
-                          ? { ...a.walkPath, start: [x, z] }
-                          : undefined,
-                      }
-                    : a
-                ),
+                actors: s.actors.map((a) => {
+                  if (a.id !== actorId) return a;
+                  const dx = x - a.position[0];
+                  const dz = z - a.position[1];
+                  return {
+                    ...a,
+                    position: [x, z],
+                    motionPath: a.motionPath
+                      ? {
+                          ...a.motionPath,
+                          points: a.motionPath.points.map(([px, pz]) => [
+                            clampX(px + dx),
+                            clampZ(pz + dz),
+                          ]),
+                        }
+                      : undefined,
+                    walkPath: a.walkPath
+                      ? {
+                          ...a.walkPath,
+                          start: [x, z],
+                          end: [
+                            clampX(a.walkPath.end[0] + dx),
+                            clampZ(a.walkPath.end[1] + dz),
+                          ],
+                        }
+                      : undefined,
+                  };
+                }),
               }
             : s
         )
@@ -850,33 +877,110 @@ export default function App() {
     [activeSceneId]
   );
 
-  const handlePickWalkTarget = useCallback(
+  const handleUpdateMotionPathPoints = useCallback(
+    (
+      actorId: string,
+      points: Array<[number, number]>,
+      options?: { commit?: boolean; exitEditMode?: boolean }
+    ) => {
+      const updater = (prev: SceneData[]): SceneData[] =>
+        prev.map((s) =>
+          s.id === activeSceneId
+            ? {
+                ...s,
+                actors: s.actors.map((a) => {
+                  if (a.id !== actorId) return a;
+                  const mode = a.motionPath?.mode ?? 'straight';
+                  const cornerStyle =
+                    a.motionPath?.cornerStyle ??
+                    (mode === 'freehand' ? 'rounded' : 'sharp');
+                  const nextPos: [number, number] =
+                    points.length >= 1
+                      ? [points[0][0], points[0][1]]
+                      : a.position;
+                  return {
+                    ...a,
+                    position: nextPos,
+                    motionPath: {
+                      enabled: true,
+                      mode,
+                      cornerStyle,
+                      points,
+                    },
+                    walkPath: undefined,
+                  };
+                }),
+              }
+            : s
+        );
+
+      if (options?.commit === false) {
+        setScenesRaw(updater);
+      } else {
+        commitScenes(updater, true);
+      }
+      if (options?.exitEditMode) {
+        setMotionPathEditMode('idle');
+      }
+    },
+    [activeSceneId, commitScenes]
+  );
+
+  const handleAppendMotionWaypoint = useCallback(
     (actorId: string, x: number, z: number) => {
       commitScenes((prev) =>
         prev.map((s) =>
           s.id === activeSceneId
             ? {
                 ...s,
-                actors: s.actors.map((a) =>
-                  a.id === actorId
-                    ? {
-                        ...a,
-                        walkPath: {
-                          enabled: true,
-                          start: [...a.position],
-                          end: [x, z],
-                        },
-                      }
-                    : a
-                ),
+                actors: s.actors.map((a) => {
+                  if (a.id !== actorId) return a;
+                  const existingPts =
+                    a.motionPath?.points && a.motionPath.points.length >= 1
+                      ? a.motionPath.points
+                      : a.walkPath?.enabled
+                        ? [a.walkPath.start, a.walkPath.end]
+                        : [a.position];
+                  const nextPts: Array<[number, number]> = [
+                    ...existingPts,
+                    [x, z],
+                  ];
+                  return {
+                    ...a,
+                    motionPath: {
+                      enabled: true,
+                      mode: 'multiPoint',
+                      cornerStyle: a.motionPath?.cornerStyle ?? 'rounded',
+                      points: nextPts,
+                    },
+                    walkPath: undefined,
+                  };
+                }),
               }
             : s
         )
       );
-      setPickingWalkTargetForId(null);
-      showNotice('Walk Path destination Point B set.');
     },
-    [activeSceneId, commitScenes, showNotice]
+    [activeSceneId, commitScenes]
+  );
+
+  const handlePreviewActorTransitions = useCallback(
+    (actor: SceneActor) => {
+      let sceneOffset = 0;
+      for (const sc of scenes) {
+        if (sc.id === activeSceneId) break;
+        sceneOffset += sc.duration;
+      }
+      const actorStart = Math.max(
+        0,
+        Math.min(activeScene.duration - 0.25, actor.startTime ?? 0)
+      );
+      setMotionPathEditMode('idle');
+      lastPlayedSceneIdRef.current = null;
+      setStoryElapsed(sceneOffset + actorStart);
+      setIsPlaying(true);
+    },
+    [activeScene.duration, activeSceneId, scenes]
   );
 
   const handleDuplicateActor = useCallback(
@@ -1044,6 +1148,7 @@ export default function App() {
 
   // Playback Controls
   const handleTogglePlayStory = useCallback(() => {
+    setMotionPathEditMode('idle');
     if (isPlaying) {
       setIsPlaying(false);
     } else {
@@ -1056,6 +1161,7 @@ export default function App() {
   }, [isPlaying, storyElapsed, totalDuration]);
 
   const handleStopPlayback = useCallback(() => {
+    setMotionPathEditMode('idle');
     setIsPlaying(false);
     setStoryElapsed(0);
     lastPlayedSceneIdRef.current = null;
@@ -1205,6 +1311,7 @@ export default function App() {
           prompt,
           source: 'gemini',
           createdAt: Date.now(),
+          style: rawBp?.style,
           parts: Array.isArray(rawBp?.parts) ? rawBp.parts : [],
         };
         if (bp.parts.length === 0) {
@@ -1247,6 +1354,7 @@ export default function App() {
               prompt,
               source: 'gemini',
               createdAt: Date.now(),
+              style: data.blueprint.style,
               parts: data.blueprint.parts,
             };
           } else {
@@ -1447,6 +1555,7 @@ export default function App() {
   // Video Export
   const handleExportVideo = useCallback(() => {
     if (!viewportRef.current) return;
+    setMotionPathEditMode('idle');
     const audioStream = audioManagerRef.current?.getExportAudioStream() ?? null;
     const recorder = viewportRef.current.startVideoCapture(audioStream);
 
@@ -1520,8 +1629,8 @@ export default function App() {
       )}
 
       {/* 2. Center Studio Workspace */}
-      <div className="flex-1 min-h-0 flex overflow-hidden relative">
-        <main className="flex-1 min-w-0 flex flex-col overflow-hidden">
+      <div className="flex-1 min-h-[calc(max(260px,42dvh)+2.5rem)] flex overflow-hidden relative">
+        <main className="flex-1 min-w-0 min-h-[calc(max(260px,42dvh)+2.5rem)] flex flex-col overflow-hidden">
           {/* Viewport Aspect Switcher Bar (16:9 / 9:16 / 1:1) */}
           <div className="h-10 shrink-0 bg-[#0E131D] border-b border-white/8 px-3 sm:px-4 flex items-center justify-between gap-2">
             <div className="flex items-center gap-2">
@@ -1621,6 +1730,8 @@ export default function App() {
             selectedActorId={selectedActorId}
             aspectRatio={aspectRatio}
             isPlaying={isPlaying}
+            isScrubbing={isScrubbing}
+            isExporting={exportState.active}
             sceneProgress={sceneProgress}
             sceneDuration={activeScene.duration}
             baseCameraPose={activeScene.cameraPose}
@@ -1628,11 +1739,12 @@ export default function App() {
             cameraStartTime={activeScene.cameraStartTime}
             cameraEndTime={activeScene.cameraEndTime}
             cameraPoseTrigger={cameraPoseTrigger}
-            pickingWalkTargetForId={pickingWalkTargetForId}
+            motionPathEditMode={motionPathEditMode}
             audioManager={audioManagerRef.current}
             onSelectActor={handleSelectActor}
             onMoveActor={handleMoveActor}
-            onPickWalkTarget={handlePickWalkTarget}
+            onUpdateMotionPathPoints={handleUpdateMotionPathPoints}
+            onAppendMotionWaypoint={handleAppendMotionWaypoint}
           />
         </main>
 
@@ -1645,7 +1757,7 @@ export default function App() {
           activeScene={activeScene}
           selectedActorId={selectedActorId}
           customModels={customModels}
-          pickingWalkTargetForId={pickingWalkTargetForId}
+          motionPathEditMode={motionPathEditMode}
           isRecordingMic={isRecordingMic}
           micDuration={micDuration}
           onChangeEnvironment={handleChangeEnvironment}
@@ -1661,7 +1773,8 @@ export default function App() {
           onUpdateActor={handleUpdateActor}
           onDuplicateActor={handleDuplicateActor}
           onDeleteActor={handleDeleteActor}
-          onTogglePickWalkTarget={setPickingWalkTargetForId}
+          onSetMotionPathEditMode={setMotionPathEditMode}
+          onPreviewActorTransitions={handlePreviewActorTransitions}
           onToggleMicRecord={handleToggleMicRecord}
           onUploadAudio={handleUploadAudio}
           onClearAudio={handleClearAudio}
@@ -1683,6 +1796,7 @@ export default function App() {
         onSelectScene={handleSelectScene}
         onSelectActor={handleSelectActor}
         onScrubTimeline={handleScrubTimeline}
+        onScrubStateChange={setIsScrubbing}
         onAddScene={handleAddScene}
         onDuplicateScene={handleDuplicateScene}
         onReorderScene={handleReorderScene}

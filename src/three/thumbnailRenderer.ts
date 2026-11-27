@@ -32,6 +32,7 @@ import {
   PropOrCustomRig,
   updatePropOrCustomAnimation,
 } from './props';
+import { inferStyleFromBlueprint } from './highDetailModelBuilder';
 
 export interface ThumbnailSpec {
   key: string;
@@ -51,7 +52,7 @@ export function getThumbnailKey(
   return `${actorType}:${kind}`;
 }
 
-const THUMB_SIZE = 160;
+const THUMB_SIZE = 140;
 const thumbnailCache = new Map<string, string>();
 const pendingQueue: ThumbnailSpec[] = [];
 const queuedKeys = new Set<string>();
@@ -159,7 +160,7 @@ function hideHelpersAndComputeBounds(container: THREE.Object3D): THREE.Box3 {
 function frameAndRender(
   ctx: OffscreenCtx,
   container: THREE.Object3D,
-  actorType: ActorType
+  isPortraitHumanoid: boolean
 ): string {
   const { renderer, scene, camera } = ctx;
   scene.add(container);
@@ -175,17 +176,16 @@ function frameAndRender(
     center.set(0, 0.75, 0);
   }
 
-  // Slight upper-center bias on characters so head & expressive eyes pop cleanly
-  const targetY =
-    actorType === 'character'
-      ? center.y + size.y * 0.07
-      : center.y;
+  // Slight upper-center bias on humanoid characters so head & expressive eyes pop cleanly
+  const targetY = isPortraitHumanoid
+    ? center.y + size.y * 0.08
+    : center.y;
   const target = new THREE.Vector3(center.x, targetY, center.z);
 
   const maxDim = Math.max(size.x, size.y, size.z, 0.35);
   const fovRad = THREE.MathUtils.degToRad(camera.fov);
   const fitDist = (maxDim * 0.5) / Math.tan(fovRad * 0.5);
-  const distanceMultiplier = actorType === 'character' ? 1.24 : 1.38;
+  const distanceMultiplier = isPortraitHumanoid ? 1.24 : 1.38;
   const dist = Math.max(0.6, fitDist * distanceMultiplier);
 
   const viewDir = new THREE.Vector3(0.42, 0.24, 1.0).normalize();
@@ -265,7 +265,13 @@ function renderSingleSpec(spec: ThumbnailSpec): string | null {
       return null;
     }
 
-    return frameAndRender(ctx, container, spec.actorType);
+    const isPortraitHumanoid =
+      spec.actorType === 'character' ||
+      (spec.actorType === 'custom' &&
+        Boolean(spec.customBlueprint) &&
+        inferStyleFromBlueprint(spec.customBlueprint!).entityType === 'humanoid');
+
+    return frameAndRender(ctx, container, isPortraitHumanoid);
   } catch {
     return null;
   } finally {

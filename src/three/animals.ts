@@ -5,7 +5,6 @@ import {
   FacialExpression,
 } from '../types/studio';
 import {
-  createCartoonOutline,
   createContactShadowTexture,
   createEyeIrisTexture,
   createSpeechBubbleTexture,
@@ -132,10 +131,6 @@ function enableShadows(group: THREE.Object3D): void {
       }
     }
   });
-}
-
-function addOutline(mesh: THREE.Mesh, thickness = 1.022, colorHex = 0x2a1810): void {
-  mesh.add(createCartoonOutline(mesh, thickness, colorHex));
 }
 
 function makeTaperedAnimalLimb(
@@ -273,7 +268,6 @@ function createFlyingBird(accentColor: string): AnimalRig {
 
   const torso = new THREE.Mesh(new THREE.SphereGeometry(0.22, 24, 18), bodyMat);
   torso.scale.set(0.95, 0.92, 1.35);
-  addOutline(torso, 1.04);
   bodyPivot.add(torso);
   accentMeshes.push(torso);
 
@@ -288,7 +282,6 @@ function createFlyingBird(accentColor: string): AnimalRig {
 
   const head = new THREE.Mesh(new THREE.SphereGeometry(0.165, 24, 18), bodyMat);
   head.scale.set(1.06, 0.98, 1.02);
-  addOutline(head, 1.04);
   headPivot.add(head);
   accentMeshes.push(head);
 
@@ -298,7 +291,6 @@ function createFlyingBird(accentColor: string): AnimalRig {
     new THREE.Vector3(0, 0.26, -0.1),
   ]);
   const crest = new THREE.Mesh(new THREE.TubeGeometry(crestCurve, 10, 0.032, 10, false), bodyMat);
-  addOutline(crest, 1.045);
   headPivot.add(crest);
   accentMeshes.push(crest);
 
@@ -306,7 +298,6 @@ function createFlyingBird(accentColor: string): AnimalRig {
   beak.rotation.x = Math.PI / 2;
   beak.scale.set(1.1, 1, 0.75);
   beak.position.set(0, 0.005, 0.185);
-  addOutline(beak, 1.045);
   headPivot.add(beak);
 
   const mouthMesh = new THREE.Mesh(new THREE.SphereGeometry(0.034, 12, 10), beakMat);
@@ -326,7 +317,6 @@ function createFlyingBird(accentColor: string): AnimalRig {
     const wp = new THREE.Group();
     wp.position.set(side * 0.18, 0.06, 0.02);
     const wing = new THREE.Mesh(makeBirdWingGeo(side), bodyMat);
-    addOutline(wing, 1.04);
     wp.add(wing);
     accentMeshes.push(wing);
     bodyPivot.add(wp);
@@ -339,7 +329,6 @@ function createFlyingBird(accentColor: string): AnimalRig {
   tailPivot.position.set(0, 0.02, -0.25);
   const tail = new THREE.Mesh(makeBirdTailGeo(), bodyMat);
   tail.rotation.x = 0.16;
-  addOutline(tail, 1.045);
   tailPivot.add(tail);
   accentMeshes.push(tail);
   bodyPivot.add(tailPivot);
@@ -404,14 +393,12 @@ function createFish(accentColor: string): AnimalRig {
 
   const torso = new THREE.Mesh(new THREE.SphereGeometry(0.26, 24, 18), bodyMat);
   torso.scale.set(0.74, 0.96, 1.48);
-  addOutline(torso, 1.04);
   bodyPivot.add(torso);
   accentMeshes.push(torso);
 
   const dorsal = new THREE.Mesh(makeFishFinGeo(0.24, 0.22), finMat);
   dorsal.rotation.y = Math.PI / 2;
   dorsal.position.set(0, 0.24, -0.02);
-  addOutline(dorsal, 1.04);
   bodyPivot.add(dorsal);
 
   const headPivot = new THREE.Group();
@@ -436,7 +423,6 @@ function createFish(accentColor: string): AnimalRig {
     const fin = new THREE.Mesh(makeFishFinGeo(0.18, 0.14), finMat);
     fin.rotation.y = side * 0.65;
     fin.position.set(side * 0.07, 0, -0.04);
-    addOutline(fin, 1.04);
     fp.add(fin);
     bodyPivot.add(fp);
     return fp;
@@ -449,7 +435,6 @@ function createFish(accentColor: string): AnimalRig {
   const tail = new THREE.Mesh(makeFishFinGeo(0.28, 0.28), finMat);
   tail.rotation.y = -Math.PI / 2;
   tail.position.z = -0.14;
-  addOutline(tail, 1.04);
   tailPivot.add(tail);
   bodyPivot.add(tailPivot);
 
@@ -538,7 +523,6 @@ function createQuadrupedOrBipedAnimal(
   );
   torso.rotation.x = isMonkey ? 0.35 : Math.PI / 2;
   torso.position.y = (isMonkey ? 0.24 : 0.14) * scaleFactor;
-  addOutline(torso, 1.042);
   bodyPivot.add(torso);
   accentMeshes.push(torso);
 
@@ -581,7 +565,6 @@ function createQuadrupedOrBipedAnimal(
     );
     neck.position.set(0, -0.14 * scaleFactor, -0.08 * scaleFactor);
     neck.rotation.x = 0.45;
-    addOutline(neck, 1.045);
     headPivot.add(neck);
     accentMeshes.push(neck);
   }
@@ -595,7 +578,6 @@ function createQuadrupedOrBipedAnimal(
   const head = new THREE.Mesh(new THREE.SphereGeometry(headRadius, 28, 22), furMat);
   head.scale.set(1.09, 0.96, 1.03);
   head.position.y = 0.14 * scaleFactor;
-  addOutline(head, 1.036);
   headPivot.add(head);
   accentMeshes.push(head);
 
@@ -603,7 +585,6 @@ function createQuadrupedOrBipedAnimal(
     const maneMat = new THREE.MeshPhysicalMaterial({ color: 0x78350f, roughness: 0.78 });
     const mane = new THREE.Mesh(new THREE.TorusGeometry(0.21 * scaleFactor, 0.085 * scaleFactor, 12, 24), maneMat);
     mane.position.set(0, 0.14 * scaleFactor, 0.02 * scaleFactor);
-    addOutline(mane, 1.04);
     headPivot.add(mane);
   }
 
@@ -621,7 +602,6 @@ function createQuadrupedOrBipedAnimal(
       new THREE.TubeGeometry(trunkCurve, 14, 0.056 * scaleFactor, 12, false),
       furMat
     );
-    addOutline(trunk1, 1.045);
     trunkPivot.add(trunk1);
     accentMeshes.push(trunk1);
 
@@ -696,7 +676,6 @@ function createQuadrupedOrBipedAnimal(
       inner.position.set(0, 0.03 * scaleFactor, 0.018 * scaleFactor);
       inner.rotation.z = Math.PI + side * -0.15;
       inner.rotation.x = -0.12;
-      addOutline(ear, 1.04);
       ep.add(ear, inner);
       accentMeshes.push(ear);
     } else if (isElephant) {
@@ -704,7 +683,6 @@ function createQuadrupedOrBipedAnimal(
       const ear = new THREE.Mesh(new THREE.SphereGeometry(0.21 * scaleFactor, 18, 14), furMat);
       ear.scale.set(0.95, 1.18, 0.22);
       ear.position.set(side * 0.12 * scaleFactor, 0, -0.04);
-      addOutline(ear, 1.04);
       const inner = new THREE.Mesh(new THREE.SphereGeometry(0.145 * scaleFactor, 14, 12), innerEarMat);
       inner.scale.set(0.88, 1.08, 0.18);
       inner.position.set(side * 0.12 * scaleFactor, -0.01 * scaleFactor, -0.018);
@@ -715,7 +693,6 @@ function createQuadrupedOrBipedAnimal(
       const ear = new THREE.Mesh(new THREE.ConeGeometry(0.072 * scaleFactor, 0.165 * scaleFactor, 14), furMat);
       ear.scale.set(1.0, 1.0, 0.65);
       ear.rotation.z = side * -0.22;
-      addOutline(ear, 1.045);
       const inner = new THREE.Mesh(new THREE.ConeGeometry(0.044 * scaleFactor, 0.11 * scaleFactor, 12), innerEarMat);
       inner.scale.set(1.0, 1.0, 0.55);
       inner.position.set(side * 0.004 * scaleFactor, -0.01 * scaleFactor, 0.022 * scaleFactor);
@@ -730,14 +707,12 @@ function createQuadrupedOrBipedAnimal(
         new THREE.Vector3(side * 0.04 * scaleFactor, -0.17 * scaleFactor, 0.04 * scaleFactor),
       ]);
       const ear = new THREE.Mesh(new THREE.TubeGeometry(flopCurve, 10, 0.046 * scaleFactor, 12, false), furMat);
-      addOutline(ear, 1.045);
       ep.add(ear);
       accentMeshes.push(ear);
     } else {
       ep.position.set(side * 0.17 * scaleFactor, 0.28 * scaleFactor, 0);
       const ear = new THREE.Mesh(new THREE.SphereGeometry(0.068 * scaleFactor, 16, 12), furMat);
       ear.scale.set(1, 1, 0.52);
-      addOutline(ear, 1.045);
       const inner = new THREE.Mesh(new THREE.SphereGeometry(0.044 * scaleFactor, 12, 10), innerEarMat);
       inner.scale.set(0.95, 0.95, 0.45);
       inner.position.z = 0.014 * scaleFactor;
@@ -756,7 +731,6 @@ function createQuadrupedOrBipedAnimal(
   if (isRabbit) {
     const puff = new THREE.Mesh(new THREE.SphereGeometry(0.085 * scaleFactor, 14, 12), bellyMat);
     puff.position.set(0, 0, -0.05);
-    addOutline(puff, 1.04);
     tailPivot.add(puff);
   } else {
     const tailPts = isMonkey
@@ -783,7 +757,6 @@ function createQuadrupedOrBipedAnimal(
       new THREE.TubeGeometry(tailCurve, 14, (isElephant ? 0.026 : 0.035) * scaleFactor, 10, false),
       furMat
     );
-    addOutline(tail, 1.045);
     tailPivot.add(tail);
     accentMeshes.push(tail);
     if (isLion || isElephant) {
@@ -811,7 +784,6 @@ function createQuadrupedOrBipedAnimal(
       ),
       furMat
     );
-    addOutline(limb, 1.045);
     leg.add(limb);
     accentMeshes.push(limb);
 
@@ -821,7 +793,6 @@ function createQuadrupedOrBipedAnimal(
     );
     paw.scale.set(1.04, 0.65, 1.24);
     paw.position.set(0, -(legLen + 0.02) * scaleFactor, 0.025 * scaleFactor);
-    addOutline(paw, 1.045);
     leg.add(paw);
 
     if (!isHorse && !isElephant) {

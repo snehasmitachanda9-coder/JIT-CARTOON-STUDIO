@@ -1,19 +1,22 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  ArrowLeftRight,
   Box,
   Camera,
   Car,
   Copy,
   Hand,
   Image as ImageIcon,
-  MapPin,
   MessageSquare,
   Mic,
   Mountain,
   Package,
   PawPrint,
+  PenTool,
+  Play,
   Plus,
   RotateCcw,
+  Route,
   Search,
   Sparkles,
   Trash2,
@@ -37,8 +40,13 @@ import {
   CharacterKind,
   CUSTOM_MODEL_RETENTION_MS,
   CustomModelBlueprint,
+  ENTRANCE_EFFECT_META,
+  EntranceEffect,
+  EntranceExitConfig,
   ENVIRONMENT_META,
   EnvironmentId,
+  EXIT_EFFECT_META,
+  ExitEffect,
   FACIAL_EXPRESSIONS,
   FacialExpression,
   getActivitiesForModel,
@@ -46,13 +54,17 @@ import {
   HandheldItemKind,
   HeldItemAttachment,
   LightingMode,
+  MotionPathConfig,
+  MotionPathMode,
   PROP_META,
   PropKind,
   SceneActor,
   SceneData,
+  TransitionDirection,
   VEHICLE_META,
   VehicleKind,
 } from '../types/studio';
+import { MotionPathEditMode } from '../three/StudioViewport';
 import {
   getCachedThumbnail,
   getThumbnailKey,
@@ -95,7 +107,7 @@ interface InspectorPanelProps {
   activeScene: SceneData;
   selectedActorId: string | null;
   customModels: CustomModelBlueprint[];
-  pickingWalkTargetForId: string | null;
+  motionPathEditMode: MotionPathEditMode;
   isRecordingMic: boolean;
   micDuration: number;
   onChangeEnvironment: (env: EnvironmentId) => void;
@@ -116,7 +128,8 @@ interface InspectorPanelProps {
   onUpdateActor: (id: string, patch: Partial<SceneActor>) => void;
   onDuplicateActor: (id: string) => void;
   onDeleteActor: (id: string) => void;
-  onTogglePickWalkTarget: (id: string | null) => void;
+  onSetMotionPathEditMode: (mode: MotionPathEditMode) => void;
+  onPreviewActorTransitions: (actor: SceneActor) => void;
   onToggleMicRecord: (targetActorId: string | null) => void;
   onUploadAudio: (targetActorId: string | null, file: File) => void;
   onClearAudio: (targetActorId: string | null) => void;
@@ -228,7 +241,7 @@ export function InspectorPanel({
   activeScene,
   selectedActorId,
   customModels,
-  pickingWalkTargetForId,
+  motionPathEditMode,
   isRecordingMic,
   micDuration,
   onChangeEnvironment,
@@ -244,7 +257,8 @@ export function InspectorPanel({
   onUpdateActor,
   onDuplicateActor,
   onDeleteActor,
-  onTogglePickWalkTarget,
+  onSetMotionPathEditMode,
+  onPreviewActorTransitions,
   onToggleMicRecord,
   onUploadAudio,
   onClearAudio,
@@ -953,72 +967,556 @@ export function InspectorPanel({
                 </div>
               )}
 
-              {/* Walk / Chase Path (Point A -> Point B) */}
-              <div className="p-2.5 rounded-xl bg-[#161C2B] border border-white/8 space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-medium text-slate-200 flex items-center gap-1.5">
-                    <MapPin className="w-3.5 h-3.5 text-emerald-400" />
-                    <span>Walk / Chase Path (A → B)</span>
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const enabled = !selectedActor.walkPath?.enabled;
-                      onUpdateActor(selectedActor.id, {
-                        walkPath: {
-                          enabled,
-                          start: [...selectedActor.position],
-                          end: selectedActor.walkPath?.end || [
-                            Math.min(5.5, selectedActor.position[0] + 2.6),
+              {/* Visual Movement Path System (Straight Line, Freehand Curve, Multi-Turn Path) */}
+              {(() => {
+                const resolvedMp: MotionPathConfig = selectedActor.motionPath
+                  ? selectedActor.motionPath
+                  : selectedActor.walkPath?.enabled
+                    ? {
+                        enabled: true,
+                        mode: 'straight',
+                        points: [
+                          [...selectedActor.walkPath.start],
+                          [...selectedActor.walkPath.end],
+                        ],
+                        cornerStyle: 'sharp',
+                      }
+                    : {
+                        enabled: false,
+                        mode: 'straight',
+                        points: [
+                          [...selectedActor.position],
+                          [
+                            Number(
+                              Math.min(5.8, selectedActor.position[0] + 2.6).toFixed(2)
+                            ),
                             selectedActor.position[1],
                           ],
-                        },
-                      });
-                    }}
-                    className={`px-2 py-0.5 rounded text-[11px] font-semibold cursor-pointer ${
-                      selectedActor.walkPath?.enabled
-                        ? 'bg-emerald-500 text-slate-950'
-                        : 'bg-white/10 text-slate-300'
-                    }`}
-                  >
-                    {selectedActor.walkPath?.enabled ? 'Active' : 'Enable'}
-                  </button>
-                </div>
+                        ],
+                        cornerStyle: 'rounded',
+                      };
 
-                {selectedActor.walkPath?.enabled && (
-                  <div className="space-y-1.5">
-                    <div className="text-[11px] font-mono-tabular text-slate-400 flex justify-between">
-                      <span>
-                        A: ({selectedActor.walkPath.start[0].toFixed(1)},{' '}
-                        {selectedActor.walkPath.start[1].toFixed(1)})
+                const switchMode = (nextMode: MotionPathMode) => {
+                  const basePts =
+                    resolvedMp.points.length >= 2
+                      ? resolvedMp.points
+                      : ([
+                          [...selectedActor.position],
+                          [
+                            Number(
+                              Math.min(5.8, selectedActor.position[0] + 2.6).toFixed(2)
+                            ),
+                            selectedActor.position[1],
+                          ],
+                        ] as Array<[number, number]>);
+
+                  const nextPts: Array<[number, number]> =
+                    nextMode === 'straight'
+                      ? [basePts[0], basePts[basePts.length - 1]]
+                      : basePts;
+
+                  onUpdateActor(selectedActor.id, {
+                    motionPath: {
+                      enabled: true,
+                      mode: nextMode,
+                      points: nextPts,
+                      cornerStyle:
+                        nextMode === 'multiPoint'
+                          ? resolvedMp.cornerStyle || 'rounded'
+                          : nextMode === 'freehand'
+                            ? 'rounded'
+                            : 'sharp',
+                    },
+                    walkPath: undefined,
+                  });
+                  onSetMotionPathEditMode(
+                    nextMode === 'freehand'
+                      ? 'drawFreehand'
+                      : nextMode === 'multiPoint'
+                        ? 'addWaypoint'
+                        : 'idle'
+                  );
+                };
+
+                const reversePath = () => {
+                  if (resolvedMp.points.length < 2) return;
+                  const rev = [...resolvedMp.points].reverse();
+                  onUpdateActor(selectedActor.id, {
+                    position: [...rev[0]],
+                    motionPath: { ...resolvedMp, enabled: true, points: rev },
+                    walkPath: undefined,
+                  });
+                };
+
+                const clearPath = () => {
+                  onSetMotionPathEditMode('idle');
+                  onUpdateActor(selectedActor.id, {
+                    motionPath: undefined,
+                    walkPath: undefined,
+                  });
+                };
+
+                return (
+                  <div className="p-2.5 rounded-xl bg-[#161C2B] border border-white/8 space-y-2.5">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-xs font-medium text-slate-200 flex items-center gap-1.5">
+                        <Route className="w-3.5 h-3.5 text-sky-400" />
+                        <span>Motion Path</span>
                       </span>
-                      <span>
-                        B: ({selectedActor.walkPath.end[0].toFixed(1)},{' '}
-                        {selectedActor.walkPath.end[1].toFixed(1)})
-                      </span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const nextEnabled = !resolvedMp.enabled;
+                          if (!nextEnabled) onSetMotionPathEditMode('idle');
+                          onUpdateActor(selectedActor.id, {
+                            motionPath: { ...resolvedMp, enabled: nextEnabled },
+                            walkPath: undefined,
+                          });
+                        }}
+                        className={`px-2 py-0.5 rounded text-[11px] font-semibold cursor-pointer ${
+                          resolvedMp.enabled
+                            ? 'bg-emerald-500 text-slate-950'
+                            : 'bg-white/10 text-slate-300'
+                        }`}
+                      >
+                        {resolvedMp.enabled ? 'Active' : 'Enable'}
+                      </button>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        onTogglePickWalkTarget(
-                          pickingWalkTargetForId === selectedActor.id
-                            ? null
-                            : selectedActor.id
-                        )
-                      }
-                      className={`w-full py-1.5 px-2.5 rounded-lg text-xs font-medium border cursor-pointer ${
-                        pickingWalkTargetForId === selectedActor.id
-                          ? 'bg-amber-500 text-slate-950 border-amber-400'
-                          : 'bg-[#1D2538] hover:bg-[#242E45] text-amber-300 border-amber-500/35'
-                      }`}
-                    >
-                      {pickingWalkTargetForId === selectedActor.id
-                        ? 'Tap 3D Ground Now...'
-                        : 'Set Point B on 3D Ground'}
-                    </button>
+
+                    {/* 3 Selectable Path Modes */}
+                    <div className="grid grid-cols-3 gap-1 bg-[#0B0E14] p-1 rounded-lg border border-white/10">
+                      {(
+                        [
+                          ['straight', 'Straight'],
+                          ['freehand', 'Freehand'],
+                          ['multiPoint', 'Multi-Turn'],
+                        ] as Array<[MotionPathMode, string]>
+                      ).map(([m, label]) => {
+                        const active = resolvedMp.enabled && resolvedMp.mode === m;
+                        return (
+                          <button
+                            key={m}
+                            type="button"
+                            onClick={() => switchMode(m)}
+                            className={`py-1.5 px-1 rounded-md text-[10px] font-medium cursor-pointer transition-colors whitespace-nowrap ${
+                              active
+                                ? 'bg-sky-500 text-slate-950 font-semibold'
+                                : 'text-slate-300 hover:bg-white/5'
+                            }`}
+                          >
+                            {label}
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    {resolvedMp.enabled && (
+                      <div className="space-y-2">
+                        {resolvedMp.mode === 'straight' && (
+                          <>
+                            <div className="text-[11px] font-mono-tabular text-slate-400 flex justify-between">
+                              <span>
+                                A: ({resolvedMp.points[0]?.[0].toFixed(1)},{' '}
+                                {resolvedMp.points[0]?.[1].toFixed(1)})
+                              </span>
+                              <span>
+                                B: (
+                                {resolvedMp.points[
+                                  resolvedMp.points.length - 1
+                                ]?.[0].toFixed(1)}
+                                ,{' '}
+                                {resolvedMp.points[
+                                  resolvedMp.points.length - 1
+                                ]?.[1].toFixed(1)}
+                                )
+                              </span>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                onSetMotionPathEditMode(
+                                  motionPathEditMode === 'pickEnd' ? 'idle' : 'pickEnd'
+                                )
+                              }
+                              className={`w-full py-1.5 px-2.5 rounded-lg text-xs font-medium border cursor-pointer ${
+                                motionPathEditMode === 'pickEnd'
+                                  ? 'bg-amber-500 text-slate-950 border-amber-400 font-semibold'
+                                  : 'bg-[#1D2538] hover:bg-[#242E45] text-amber-300 border-amber-500/35'
+                              }`}
+                            >
+                              {motionPathEditMode === 'pickEnd'
+                                ? 'Tap 3D Ground Now...'
+                                : 'Set Point B on 3D Ground'}
+                            </button>
+                            <p className="text-[10px] text-slate-400">
+                              Drag green Start (A) or amber End (B) handles on stage.
+                            </p>
+                          </>
+                        )}
+
+                        {resolvedMp.mode === 'freehand' && (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                onSetMotionPathEditMode(
+                                  motionPathEditMode === 'drawFreehand'
+                                    ? 'idle'
+                                    : 'drawFreehand'
+                                )
+                              }
+                              className={`w-full py-1.5 px-2.5 rounded-lg text-xs font-medium border flex items-center justify-center gap-1.5 cursor-pointer ${
+                                motionPathEditMode === 'drawFreehand'
+                                  ? 'bg-amber-500 text-slate-950 border-amber-400 font-semibold'
+                                  : 'bg-[#1D2538] hover:bg-[#242E45] text-sky-300 border-sky-400/35'
+                              }`}
+                            >
+                              <PenTool className="w-3.5 h-3.5" />
+                              <span>
+                                {motionPathEditMode === 'drawFreehand'
+                                  ? 'Drawing... Drag on 3D Ground'
+                                  : 'Draw Freehand Path on Stage'}
+                              </span>
+                            </button>
+                            <div className="text-[10px] font-mono-tabular text-slate-400 flex justify-between">
+                              <span>Catmull-Rom smooth curve</span>
+                              <span>{resolvedMp.points.length} pts</span>
+                            </div>
+                          </>
+                        )}
+
+                        {resolvedMp.mode === 'multiPoint' && (
+                          <>
+                            <div className="flex gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  onSetMotionPathEditMode(
+                                    motionPathEditMode === 'addWaypoint'
+                                      ? 'idle'
+                                      : 'addWaypoint'
+                                  )
+                                }
+                                className={`flex-1 py-1.5 px-2 rounded-lg text-[11px] font-medium border cursor-pointer ${
+                                  motionPathEditMode === 'addWaypoint'
+                                    ? 'bg-amber-500 text-slate-950 border-amber-400 font-semibold'
+                                    : 'bg-[#1D2538] hover:bg-[#242E45] text-sky-300 border-sky-400/35'
+                                }`}
+                              >
+                                {motionPathEditMode === 'addWaypoint'
+                                  ? 'Done Adding Points'
+                                  : 'Tap Ground to Add Turns'}
+                              </button>
+                              <button
+                                type="button"
+                                disabled={resolvedMp.points.length <= 2}
+                                onClick={() => {
+                                  if (resolvedMp.points.length <= 2) return;
+                                  onUpdateActor(selectedActor.id, {
+                                    motionPath: {
+                                      ...resolvedMp,
+                                      points: resolvedMp.points.slice(0, -1),
+                                    },
+                                  });
+                                }}
+                                className="px-2.5 py-1.5 rounded-lg bg-[#111622] hover:bg-[#1E273B] disabled:opacity-40 border border-white/10 text-[11px] text-slate-300 cursor-pointer"
+                              >
+                                Undo Pt
+                              </button>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-1">
+                              {(
+                                [
+                                  ['rounded', 'Rounded Curves'],
+                                  ['sharp', 'Sharp Corners'],
+                                ] as const
+                              ).map(([cs, label]) => {
+                                const active =
+                                  (resolvedMp.cornerStyle || 'rounded') === cs;
+                                return (
+                                  <button
+                                    key={cs}
+                                    type="button"
+                                    onClick={() =>
+                                      onUpdateActor(selectedActor.id, {
+                                        motionPath: {
+                                          ...resolvedMp,
+                                          cornerStyle: cs,
+                                        },
+                                      })
+                                    }
+                                    className={`py-1 px-2 rounded-md text-[10px] font-medium border cursor-pointer ${
+                                      active
+                                        ? 'bg-sky-500/20 border-sky-400 text-sky-200'
+                                        : 'bg-[#111622] border-white/8 text-slate-300'
+                                    }`}
+                                  >
+                                    {label}
+                                  </button>
+                                );
+                              })}
+                            </div>
+
+                            <div className="text-[10px] font-mono-tabular text-slate-400 flex justify-between">
+                              <span>Drag any waypoint node on stage</span>
+                              <span>{resolvedMp.points.length} waypoints</span>
+                            </div>
+                          </>
+                        )}
+
+                        {/* Reverse & Clear Actions */}
+                        <div className="grid grid-cols-2 gap-1.5 pt-1 border-t border-white/8">
+                          <button
+                            type="button"
+                            onClick={reversePath}
+                            className="py-1.5 px-2 rounded-lg bg-[#111622] hover:bg-[#1E273B] border border-white/10 text-[11px] font-medium text-slate-200 flex items-center justify-center gap-1 cursor-pointer"
+                          >
+                            <ArrowLeftRight className="w-3 h-3 text-sky-400" />
+                            <span>Reverse Path</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={clearPath}
+                            className="py-1.5 px-2 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/25 text-[11px] font-medium text-rose-300 flex items-center justify-center gap-1 cursor-pointer"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                            <span>Clear Path</span>
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </div>
-                )}
-              </div>
+                );
+              })()}
+
+              {/* Dedicated Entrance & Exit Effects Section */}
+              {(() => {
+                const tr: EntranceExitConfig = selectedActor.transitions || {
+                  entrance: 'none',
+                  entranceDuration: 0.8,
+                  entranceDirection: 'left',
+                  exit: 'none',
+                  exitDuration: 0.8,
+                  exitDirection: 'right',
+                };
+
+                const patchTransitions = (patch: Partial<EntranceExitConfig>) => {
+                  onUpdateActor(selectedActor.id, {
+                    transitions: { ...tr, ...patch },
+                  });
+                };
+
+                const showInDirs = tr.entrance === 'flyIn' || tr.entrance === 'wipe';
+                const showOutDirs = tr.exit === 'flyOut' || tr.exit === 'wipe';
+
+                return (
+                  <div className="p-2.5 rounded-xl bg-[#161C2B] border border-white/8 space-y-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-xs font-medium text-slate-200 flex items-center gap-1.5">
+                        <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                        <span>Entrance & Exit</span>
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => onPreviewActorTransitions(selectedActor)}
+                        className="px-2 py-0.5 rounded bg-amber-500/20 hover:bg-amber-500/30 border border-amber-400/40 text-[10px] font-semibold text-amber-300 flex items-center gap-1 cursor-pointer"
+                      >
+                        <Play className="w-2.5 h-2.5 fill-current" />
+                        <span>Preview</span>
+                      </button>
+                    </div>
+
+                    {/* Entrance Effects (15 Options) */}
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-between text-[11px]">
+                        <span className="font-medium text-emerald-300">
+                          Entrance Effect
+                        </span>
+                        <span className="font-mono-tabular text-slate-300">
+                          {tr.entranceDuration.toFixed(1)}s
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-3 gap-1">
+                        {ENTRANCE_EFFECT_META.map((eff) => {
+                          const active = tr.entrance === eff.id;
+                          return (
+                            <button
+                              key={eff.id}
+                              type="button"
+                              onClick={() =>
+                                patchTransitions({
+                                  entrance: eff.id as EntranceEffect,
+                                })
+                              }
+                              className={`py-1.5 px-1 rounded-md text-[10px] font-medium border truncate cursor-pointer transition-colors ${
+                                active
+                                  ? 'bg-emerald-500/20 border-emerald-400 text-emerald-200 font-semibold'
+                                  : 'bg-[#111622] border-white/8 text-slate-300 hover:bg-[#1E273B]'
+                              }`}
+                            >
+                              {eff.label}
+                            </button>
+                          );
+                        })}
+                      </div>
+
+                      {showInDirs && (
+                        <div className="grid grid-cols-4 gap-1 pt-0.5">
+                          {(
+                            (tr.entrance === 'wipe'
+                              ? [
+                                  ['bottom', 'Bottom↑'],
+                                  ['left', 'Left→'],
+                                  ['right', '←Right'],
+                                ]
+                              : [
+                                  ['left', 'Left'],
+                                  ['right', 'Right'],
+                                  ['top', 'Top'],
+                                  ['bottom', 'Bottom'],
+                                ]) as Array<[TransitionDirection, string]>
+                          ).map(([dir, label]) => (
+                            <button
+                              key={dir}
+                              type="button"
+                              onClick={() =>
+                                patchTransitions({ entranceDirection: dir })
+                              }
+                              className={`py-1 rounded text-[10px] font-medium border cursor-pointer ${
+                                (tr.entranceDirection ||
+                                  (tr.entrance === 'wipe' ? 'bottom' : 'left')) ===
+                                dir
+                                  ? 'bg-emerald-500 text-slate-950 border-emerald-400 font-semibold'
+                                  : 'bg-[#111622] border-white/8 text-slate-300'
+                              }`}
+                            >
+                              {label}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+
+                      {tr.entrance !== 'none' && (
+                        <div className="space-y-0.5 pt-0.5">
+                          <div className="flex justify-between text-[10px] text-slate-400">
+                            <span>Entrance Duration</span>
+                            <span className="font-mono-tabular text-emerald-300">
+                              {tr.entranceDuration.toFixed(1)}s
+                            </span>
+                          </div>
+                          <input
+                            type="range"
+                            min={0.3}
+                            max={2.0}
+                            step={0.1}
+                            value={tr.entranceDuration}
+                            onChange={(e) =>
+                              patchTransitions({
+                                entranceDuration: Number(e.target.value),
+                              })
+                            }
+                            className="w-full studio-range"
+                          />
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Exit Effects (7 Options + None) */}
+                    <div className="space-y-1.5 pt-2 border-t border-white/8">
+                      <div className="flex items-center justify-between text-[11px]">
+                        <span className="font-medium text-rose-300">Exit Effect</span>
+                        <span className="font-mono-tabular text-slate-300">
+                          {tr.exitDuration.toFixed(1)}s
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-4 gap-1">
+                        {EXIT_EFFECT_META.map((eff) => {
+                          const active = tr.exit === eff.id;
+                          return (
+                            <button
+                              key={eff.id}
+                              type="button"
+                              onClick={() =>
+                                patchTransitions({ exit: eff.id as ExitEffect })
+                              }
+                              className={`py-1.5 px-1 rounded-md text-[10px] font-medium border truncate cursor-pointer transition-colors ${
+                                active
+                                  ? 'bg-rose-500/20 border-rose-400 text-rose-200 font-semibold'
+                                  : 'bg-[#111622] border-white/8 text-slate-300 hover:bg-[#1E273B]'
+                              }`}
+                            >
+                              {eff.label}
+                            </button>
+                          );
+                        })}
+                      </div>
+
+                      {showOutDirs && (
+                        <div className="grid grid-cols-4 gap-1 pt-0.5">
+                          {(
+                            (tr.exit === 'wipe'
+                              ? [
+                                  ['bottom', 'Bottom↑'],
+                                  ['left', 'Left→'],
+                                  ['right', '←Right'],
+                                ]
+                              : [
+                                  ['left', 'Left'],
+                                  ['right', 'Right'],
+                                  ['top', 'Top'],
+                                  ['bottom', 'Bottom'],
+                                ]) as Array<[TransitionDirection, string]>
+                          ).map(([dir, label]) => (
+                            <button
+                              key={dir}
+                              type="button"
+                              onClick={() =>
+                                patchTransitions({ exitDirection: dir })
+                              }
+                              className={`py-1 rounded text-[10px] font-medium border cursor-pointer ${
+                                (tr.exitDirection ||
+                                  (tr.exit === 'wipe' ? 'bottom' : 'right')) ===
+                                dir
+                                  ? 'bg-rose-500 text-white border-rose-400 font-semibold'
+                                  : 'bg-[#111622] border-white/8 text-slate-300'
+                              }`}
+                            >
+                              {label}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+
+                      {tr.exit !== 'none' && (
+                        <div className="space-y-0.5 pt-0.5">
+                          <div className="flex justify-between text-[10px] text-slate-400">
+                            <span>Exit Duration</span>
+                            <span className="font-mono-tabular text-rose-300">
+                              {tr.exitDuration.toFixed(1)}s
+                            </span>
+                          </div>
+                          <input
+                            type="range"
+                            min={0.3}
+                            max={2.0}
+                            step={0.1}
+                            value={tr.exitDuration}
+                            onChange={(e) =>
+                              patchTransitions({
+                                exitDuration: Number(e.target.value),
+                              })
+                            }
+                            className="w-full studio-range"
+                          />
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })()}
 
               {/* Rotate & Scale */}
               <div className="space-y-1">
