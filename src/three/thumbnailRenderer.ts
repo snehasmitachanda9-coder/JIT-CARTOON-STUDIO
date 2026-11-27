@@ -190,10 +190,10 @@ function frameAndRender(
   const maxDim = Math.max(size.x, size.y, size.z, 0.35);
   const fovRad = THREE.MathUtils.degToRad(camera.fov);
   const fitDist = (maxDim * 0.5) / Math.tan(fovRad * 0.5);
-  const distanceMultiplier = isPortraitHumanoid ? 1.24 : 1.38;
+  const distanceMultiplier = isPortraitHumanoid ? 1.22 : 1.38;
   const dist = Math.max(0.6, fitDist * distanceMultiplier);
 
-  const viewDir = new THREE.Vector3(0.42, 0.24, 1.0).normalize();
+  const viewDir = new THREE.Vector3(0.32, 0.18, 1.0).normalize();
   camera.position.copy(target).addScaledVector(viewDir, dist);
   camera.lookAt(target);
   camera.updateProjectionMatrix();
@@ -225,7 +225,6 @@ async function renderSingleSpec(spec: ThumbnailSpec): Promise<string | null> {
         rigB.selectionRing.visible = false;
         container.add(rigA.root, rigB.root);
         charRigs.push(rigA, rigB);
-        await Promise.all([rigA.readyPromise, rigB.readyPromise]);
         updateCharacterAnimation(rigA, 'Idle', 'Happy', 0.25, 0.016, 0, false, true);
         updateCharacterAnimation(rigB, 'Idle', 'Happy', 0.25, 0.016, 0, false, true);
       } else {
@@ -235,7 +234,6 @@ async function renderSingleSpec(spec: ThumbnailSpec): Promise<string | null> {
         rig.selectionRing.visible = false;
         container.add(rig.root);
         charRigs.push(rig);
-        await rig.readyPromise;
         updateCharacterAnimation(rig, 'Idle', 'Happy', 0.25, 0.016, 0, false, true);
       }
     } else if (spec.actorType === 'animal') {

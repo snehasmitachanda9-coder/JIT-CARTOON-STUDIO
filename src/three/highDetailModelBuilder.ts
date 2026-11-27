@@ -10,7 +10,6 @@ import {
   VehicleKind,
 } from '../types/studio';
 import {
-  createChibiSkinTexture,
   createEyeIrisTexture,
   getSharedFabricTexture,
 } from './proceduralTextures';
@@ -1043,6 +1042,8 @@ function buildSculptedRobotModel(accentColor: string): SculptedHumanoidParts {
     handMount.position.set(0, -0.235, 0.05);
     forearmPivot.add(handMount);
 
+    shoulder.rotation.z = side * 0.18;
+    forearmPivot.rotation.x = -0.14;
     bodyPivot.add(shoulder);
     return { shoulder, forearmPivot, handMount };
   };
@@ -1114,7 +1115,6 @@ function buildSculptedHumanoidAssembly(spec: HumanoidSpec): SculptedHumanoidPart
     presetKind,
     scaleFactor,
     isFemale,
-    hasFreckles,
     skinColor,
     primaryColor,
     secondaryColor,
@@ -1637,29 +1637,23 @@ function buildSculptedHumanoidAssembly(spec: HumanoidSpec): SculptedHumanoidPart
   neck.position.y = 0.045 * scaleFactor;
   headPivot.add(neck);
 
-  const skinTex = createChibiSkinTexture(
-    new THREE.Color(skinColor).getHex(),
-    hasFreckles,
-    isFemale
-  );
-  const faceMat = makeStudioStandardMat(0xffffff, {
-    map: skinTex,
-    roughness: 0.44,
-    metalness: 0.02,
-  });
   const earInnerMat = makeStudioStandardMat(
     new THREE.Color(skinColor).lerp(new THREE.Color(0xfb7185), 0.34),
     { roughness: 0.48 }
   );
+  const blushMat = makeStudioStandardMat(
+    new THREE.Color(skinColor).lerp(new THREE.Color(0xf43f5e), 0.42),
+    { roughness: 0.52, metalness: 0.01 }
+  );
 
-  // Expressive Chibi Head: SphereGeometry(0.62, 36, 36) contoured & scaled cleanly
+  // Expressive Chibi-Cartoon Head: clean SphereGeometry(0.55, 32, 32) with solid warm skin tone, oriented front +Z
   const isYoungKid = scaleFactor < 0.92;
   const headRadius = (isYoungKid ? 0.38 : 0.355) * scaleFactor;
-  const headUnitScale = headRadius / 0.62;
+  const headUnitScale = headRadius / 0.55;
   const headCenterY = 0.075 * scaleFactor + headRadius * 0.96;
-  const head = new THREE.Mesh(getChibiHeadGeometry(), faceMat);
-  head.scale.set(1.04 * headUnitScale, 0.98 * headUnitScale, 1.08 * headUnitScale);
-  head.rotation.y = -Math.PI / 2;
+  const headGeo = new THREE.SphereGeometry(0.55, 32, 32);
+  const head = new THREE.Mesh(headGeo, skinMat);
+  head.scale.set(1.06 * headUnitScale, 0.98 * headUnitScale, 1.04 * headUnitScale);
   head.position.y = headCenterY;
   headPivot.add(head);
 
@@ -1667,20 +1661,20 @@ function buildSculptedHumanoidAssembly(spec: HumanoidSpec): SculptedHumanoidPart
   [-1, 1].forEach((side) => {
     const earGroup = new THREE.Group();
     earGroup.position.set(
-      side * headRadius * 1.08,
+      side * headRadius * 1.05,
       headCenterY - 0.015 * scaleFactor,
       -0.02 * scaleFactor
     );
     earGroup.rotation.y = side * -0.24;
 
     const outerEar = new THREE.Mesh(
-      new THREE.SphereGeometry(0.068 * scaleFactor, 28, 22),
+      new THREE.SphereGeometry(0.068 * scaleFactor, 24, 18),
       skinMat
     );
     outerEar.scale.set(0.62, 1.04, 0.72);
 
     const innerEar = new THREE.Mesh(
-      new THREE.SphereGeometry(0.044 * scaleFactor, 22, 16),
+      new THREE.SphereGeometry(0.044 * scaleFactor, 20, 14),
       earInnerMat
     );
     innerEar.scale.set(0.55, 0.85, 0.55);
@@ -1690,40 +1684,51 @@ function buildSculptedHumanoidAssembly(spec: HumanoidSpec): SculptedHumanoidPart
     headPivot.add(earGroup);
   });
 
-  // Cute 3D Button Nose
+  // Soft Rosy 3D Cheeks flush on lower front cheeks (+Z)
+  [-1, 1].forEach((side) => {
+    const cheek = new THREE.Mesh(
+      new THREE.SphereGeometry(0.056 * scaleFactor, 20, 16),
+      blushMat
+    );
+    cheek.scale.set(1.18, 0.72, 0.32);
+    cheek.position.set(
+      side * headRadius * 0.50,
+      headCenterY - headRadius * 0.19,
+      headRadius * 0.895
+    );
+    cheek.rotation.y = side * 0.44;
+    headPivot.add(cheek);
+  });
+
+  // Cute 3D Button Nose cleanly visible on front (+Z)
   const noseBridge = new THREE.Mesh(
     new THREE.SphereGeometry(0.022 * scaleFactor, 20, 16),
     skinMat
   );
   noseBridge.scale.set(0.85, 1.25, 0.9);
-  noseBridge.position.set(0, headCenterY - headRadius * 0.045, headRadius * 1.015);
+  noseBridge.position.set(0, headCenterY - headRadius * 0.04, headRadius * 1.02);
   const nose = new THREE.Mesh(
-    new THREE.SphereGeometry(0.036 * scaleFactor, 28, 22),
+    new THREE.SphereGeometry(0.038 * scaleFactor, 24, 18),
     earInnerMat
   );
   nose.scale.set(1.12, 0.82, 0.96);
-  nose.position.set(0, headCenterY - headRadius * 0.088, headRadius * 1.045);
+  nose.position.set(0, headCenterY - headRadius * 0.088, headRadius * 1.065);
   headPivot.add(noseBridge, nose);
 
-  // Glossy Clearcoat 3D Eyeballs (Iris Ring + Dark Pupil + Dual Catchlights + Sculpted Eyelids)
+  // Large Glossy Clearcoat 3D Eyeballs (White Sclera + Colored Iris + Dark Pupil + Dual Sparkles)
   const eyeY = headCenterY + headRadius * 0.085;
-  const eyeZ = headRadius * 0.915;
-  const eyeX = headRadius * 0.365;
-  const irisMat = makeStudioGlossyMat(0xffffff, {
-    map: createEyeIrisTexture(eyeColor),
-    roughness: 0.05,
-    metalness: 0.04,
-    clearcoat: 1.0,
-    clearcoatRoughness: 0.02,
-  });
-  const corneaGlassMat = makeStudioGlossyMat(0xffffff, {
-    transparent: true,
-    opacity: 0.16,
-    roughness: 0.02,
+  const eyeZ = headRadius * 0.955;
+  const eyeX = headRadius * 0.35;
+  const irisSolidMat = makeStudioGlossyMat(eyeColor, {
+    roughness: 0.08,
     metalness: 0.05,
     clearcoat: 1.0,
     clearcoatRoughness: 0.02,
-    depthWrite: false,
+  });
+  const pupilSolidMat = makeStudioGlossyMat(0x090b10, {
+    roughness: 0.06,
+    metalness: 0.08,
+    clearcoat: 1.0,
   });
   const catchMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
   catchMat.userData.sharedResource = true;
@@ -1732,126 +1737,118 @@ function buildSculptedHumanoidAssembly(spec: HumanoidSpec): SculptedHumanoidPart
   const makeSculptedEye = (side: -1 | 1) => {
     const eg = new THREE.Group();
     eg.position.set(side * eyeX, eyeY, eyeZ);
-    eg.rotation.y = side * 0.14;
+    eg.rotation.y = side * 0.16;
 
-    const r = 0.068 * scaleFactor;
-    const sclera = new THREE.Mesh(new THREE.SphereGeometry(r, 32, 24), whiteMat);
-    sclera.scale.set(0.98, 1.06, 0.68);
+    const r = 0.072 * scaleFactor;
+    const sclera = new THREE.Mesh(new THREE.SphereGeometry(r, 28, 22), whiteMat);
+    sclera.scale.set(0.96, 1.08, 0.56);
 
-    const iris = new THREE.Mesh(new THREE.SphereGeometry(r * 0.82, 32, 24), irisMat);
-    iris.scale.set(0.95, 1.02, 0.42);
-    iris.position.set(side * -0.004 * scaleFactor, 0, r * 0.42);
-    iris.rotation.y = -Math.PI / 2;
+    const iris = new THREE.Mesh(new THREE.SphereGeometry(r * 0.66, 24, 18), irisSolidMat);
+    iris.scale.set(0.96, 1.05, 0.32);
+    iris.position.set(side * -0.004 * scaleFactor, 0, r * 0.40);
 
-    const cornea = new THREE.Mesh(
-      new THREE.SphereGeometry(r * 1.02, 32, 24),
-      corneaGlassMat
-    );
-    cornea.scale.set(0.98, 1.06, 0.72);
-    cornea.position.z = r * 0.06;
+    const pupil = new THREE.Mesh(new THREE.SphereGeometry(r * 0.38, 20, 16), pupilSolidMat);
+    pupil.scale.set(0.96, 1.04, 0.28);
+    pupil.position.set(side * -0.004 * scaleFactor, 0, r * 0.52);
 
-    const sp1 = new THREE.Mesh(new THREE.SphereGeometry(r * 0.21, 16, 12), catchMat);
-    sp1.position.set(-r * 0.28, r * 0.32, r * 0.78);
-    const sp2 = new THREE.Mesh(new THREE.SphereGeometry(r * 0.11, 12, 10), catchMat);
-    sp2.position.set(r * 0.26, -r * 0.22, r * 0.75);
+    const sp1 = new THREE.Mesh(new THREE.SphereGeometry(r * 0.19, 14, 12), catchMat);
+    sp1.position.set(-r * 0.22, r * 0.24, r * 0.62);
+    const sp2 = new THREE.Mesh(new THREE.SphereGeometry(r * 0.1, 12, 10), catchMat);
+    sp2.position.set(r * 0.18, -r * 0.16, r * 0.61);
 
     const upperLidHood = new THREE.Mesh(
       new THREE.TorusGeometry(
         r * 1.02,
-        0.017 * scaleFactor,
-        14,
-        32,
+        0.015 * scaleFactor,
+        12,
+        28,
         Math.PI * 0.92
       ),
       skinMat
     );
     upperLidHood.rotation.z = Math.PI * 0.04;
     upperLidHood.rotation.x = 0.22;
-    upperLidHood.position.set(0, r * 0.14, r * 0.28);
+    upperLidHood.position.set(0, r * 0.12, r * 0.26);
 
     const lashArc = new THREE.Mesh(
       new THREE.TorusGeometry(
         r * 1.0,
-        (isFemale ? 0.012 : 0.009) * scaleFactor,
+        (isFemale ? 0.013 : 0.009) * scaleFactor,
         12,
-        32,
+        28,
         Math.PI * 0.88
       ),
       lashMat
     );
     lashArc.rotation.z = Math.PI * 0.06;
-    lashArc.position.set(0, r * 0.08, r * 0.36);
+    lashArc.position.set(0, r * 0.07, r * 0.34);
 
-    const lowerLid = new THREE.Mesh(
-      new THREE.TorusGeometry(r * 0.96, 0.01 * scaleFactor, 12, 28, Math.PI * 0.76),
-      skinMat
-    );
-    lowerLid.rotation.z = Math.PI + Math.PI * 0.12;
-    lowerLid.position.set(0, -r * 0.12, r * 0.28);
-
-    eg.add(sclera, iris, cornea, sp1, sp2, upperLidHood, lashArc, lowerLid);
+    eg.add(sclera, iris, pupil, sp1, sp2, upperLidHood, lashArc);
 
     if (isFemale) {
       const lashWing = new THREE.Mesh(
-        new THREE.ConeGeometry(0.009 * scaleFactor, 0.032 * scaleFactor, 12),
+        new THREE.ConeGeometry(0.01 * scaleFactor, 0.034 * scaleFactor, 12),
         lashMat
       );
-      lashWing.position.set(side * r * 1.0, r * 0.38, r * 0.32);
+      lashWing.position.set(side * r * 0.98, r * 0.36, r * 0.28);
       lashWing.rotation.z = side * -1.05;
       eg.add(lashWing);
     }
 
     headPivot.add(eg);
-    return cornea;
+    return sclera;
   };
 
   const leftEye = makeSculptedEye(-1);
   const rightEye = makeSculptedEye(1);
 
-  // Curved 3D Eyebrows
+  // Curved Dark 3D Eyebrows cleanly above the eyes
   const browGeo = new THREE.TorusGeometry(
     0.06 * scaleFactor,
-    0.016 * scaleFactor,
-    14,
-    28,
+    0.015 * scaleFactor,
+    12,
+    24,
     Math.PI * 0.68
   );
   browGeo.rotateZ(Math.PI * 0.16);
-  const leftBrow = new THREE.Mesh(browGeo, hairMat);
-  leftBrow.position.set(-eyeX, eyeY + 0.062 * scaleFactor, eyeZ + 0.048 * scaleFactor);
+  const browMat = makeStudioStandardMat(
+    presetKind === 'grandpa' || presetKind === 'grandma' || presetKind === 'wizard'
+      ? hairColor
+      : 0x2a1810,
+    { roughness: 0.42 }
+  );
+  const leftBrow = new THREE.Mesh(browGeo, browMat);
+  leftBrow.position.set(-eyeX, eyeY + 0.078 * scaleFactor, eyeZ + 0.02 * scaleFactor);
   leftBrow.rotation.y = -0.14;
-  const rightBrow = new THREE.Mesh(browGeo, hairMat);
-  rightBrow.position.set(eyeX, eyeY + 0.062 * scaleFactor, eyeZ + 0.048 * scaleFactor);
+  const rightBrow = new THREE.Mesh(browGeo, browMat);
+  rightBrow.position.set(eyeX, eyeY + 0.078 * scaleFactor, eyeZ + 0.02 * scaleFactor);
   rightBrow.rotation.y = 0.14;
   headPivot.add(leftBrow, rightBrow);
 
-  // Animated 3D Mouth + Lips + Teeth + Tongue
+  // Smiling Coral/Red 3D Mouth + Animated Mouth Cavity on Front (+Z)
+  const lipColor = isFemale ? 0xf43f5e : 0xe11d48;
+  const lipMat = makeStudioGlossyMat(lipColor, {
+    roughness: 0.3,
+    clearcoat: 0.42,
+  });
+  const smileArc = new THREE.Mesh(
+    new THREE.TorusGeometry(0.062 * scaleFactor, 0.013 * scaleFactor, 14, 28, Math.PI * 0.78),
+    lipMat
+  );
+  smileArc.rotation.z = Math.PI + Math.PI * 0.11;
+  smileArc.position.set(0, headCenterY - headRadius * 0.27, headRadius * 0.995);
+  headPivot.add(smileArc);
+
   const mouthMesh = new THREE.Mesh(
-    new THREE.SphereGeometry(0.056 * scaleFactor, 24, 18),
+    new THREE.SphereGeometry(0.052 * scaleFactor, 22, 16),
     mouthMat
   );
-  mouthMesh.scale.set(1.18, 0.42, 0.52);
-  mouthMesh.position.set(0, headCenterY - headRadius * 0.34, headRadius * 0.96);
-
-  const lipMat = makeStudioGlossyMat(isFemale ? 0xf43f5e : 0xe07a6c, {
-    roughness: 0.32,
-    clearcoat: 0.4,
-  });
-  const upperLip = new THREE.Mesh(
-    new THREE.TorusGeometry(0.052 * scaleFactor, 0.009 * scaleFactor, 14, 28, Math.PI),
-    lipMat
-  );
-  upperLip.position.set(0, 0.012 * scaleFactor, 0.012 * scaleFactor);
-  const lowerLip = new THREE.Mesh(
-    new THREE.TorusGeometry(0.05 * scaleFactor, 0.01 * scaleFactor, 14, 28, Math.PI),
-    lipMat
-  );
-  lowerLip.rotation.z = Math.PI;
-  lowerLip.position.set(0, -0.01 * scaleFactor, 0.012 * scaleFactor);
+  mouthMesh.scale.set(1.12, 0.38, 0.48);
+  mouthMesh.position.set(0, headCenterY - headRadius * 0.33, headRadius * 0.995);
 
   const upperTeeth = new THREE.Mesh(
     new THREE.TorusGeometry(
-      0.042 * scaleFactor,
+      0.038 * scaleFactor,
       0.008 * scaleFactor,
       10,
       20,
@@ -1860,47 +1857,48 @@ function buildSculptedHumanoidAssembly(spec: HumanoidSpec): SculptedHumanoidPart
     whiteMat
   );
   upperTeeth.rotation.z = Math.PI * 0.075;
-  upperTeeth.position.set(0, 0.008 * scaleFactor, 0.014 * scaleFactor);
+  upperTeeth.position.set(0, 0.006 * scaleFactor, 0.016 * scaleFactor);
   const tongue = new THREE.Mesh(
-    new THREE.SphereGeometry(0.032 * scaleFactor, 22, 16),
-    makeStudioStandardMat(0xf43f5e, { roughness: 0.32 })
+    new THREE.SphereGeometry(0.028 * scaleFactor, 18, 14),
+    makeStudioStandardMat(0xfb7185, { roughness: 0.34 })
   );
-  tongue.scale.set(1.15, 0.45, 0.75);
+  tongue.scale.set(1.1, 0.45, 0.72);
   tongue.position.set(0, -0.008 * scaleFactor, 0.014 * scaleFactor);
-  mouthMesh.add(upperLip, lowerLip, upperTeeth, tongue);
+  mouthMesh.add(upperTeeth, tongue);
   headPivot.add(mouthMesh);
 
-  // Volumetric 3D Hair
+  // Volumetric 3D Hair cleanly positioned on top/back (y > 0.2 * headRadius) so it NEVER covers eyes or face
   if (hairStyle !== 'bald') {
     const hairTop = new THREE.Mesh(
       new THREE.SphereGeometry(
         headRadius * 1.07,
         36,
-        28,
+        24,
         0,
         Math.PI * 2,
         0,
-        Math.PI * 0.56
+        Math.PI * 0.48
       ),
       hairMat
     );
-    hairTop.scale.set(1.09, 0.98, 1.05);
-    hairTop.position.y = headCenterY + 0.015 * scaleFactor;
+    hairTop.scale.set(1.07, 0.99, 1.05);
+    hairTop.position.set(0, headCenterY + 0.025 * scaleFactor, -0.015 * scaleFactor);
+    hairTop.rotation.x = -0.16;
     headPivot.add(hairTop);
 
     const hairBack = new THREE.Mesh(
       new THREE.SphereGeometry(
         headRadius * 1.06,
         36,
-        26,
-        Math.PI * 0.68,
-        Math.PI * 1.64,
-        Math.PI * 0.2,
-        Math.PI * 0.58
+        24,
+        Math.PI * 0.72,
+        Math.PI * 1.56,
+        Math.PI * 0.18,
+        Math.PI * 0.56
       ),
       hairMat
     );
-    hairBack.scale.set(1.09, 0.98, 1.05);
+    hairBack.scale.set(1.07, 0.98, 1.05);
     hairBack.position.y = headCenterY;
     headPivot.add(hairBack);
 
@@ -1914,40 +1912,35 @@ function buildSculptedHumanoidAssembly(spec: HumanoidSpec): SculptedHumanoidPart
         const frac = (i / (bangCount - 1)) * 2 - 1;
         const curve = new THREE.CatmullRomCurve3([
           new THREE.Vector3(
-            frac * 0.07 * scaleFactor,
-            0.04 * scaleFactor,
-            -0.05 * scaleFactor
+            frac * 0.06 * scaleFactor,
+            0.06 * scaleFactor,
+            -0.06 * scaleFactor
           ),
           new THREE.Vector3(
-            frac * 0.13 * scaleFactor,
-            (hairStyle === 'spiky' ? 0.06 : 0.01) * scaleFactor,
-            0.055 * scaleFactor
+            frac * 0.11 * scaleFactor,
+            0.03 * scaleFactor,
+            0.03 * scaleFactor
           ),
           new THREE.Vector3(
-            frac * 0.19 * scaleFactor,
-            (hairStyle === 'spiky' ? 0.01 : -0.065) * scaleFactor,
-            (hairStyle === 'spiky' ? 0.12 : 0.095) * scaleFactor
-          ),
-          new THREE.Vector3(
-            frac * 0.22 * scaleFactor,
-            -0.115 * scaleFactor,
-            0.065 * scaleFactor
+            frac * 0.16 * scaleFactor,
+            (hairStyle === 'spiky' ? 0.04 : -0.015) * scaleFactor,
+            0.075 * scaleFactor
           ),
         ]);
         const bangGeo = new THREE.TubeGeometry(
           curve,
-          14,
-          (0.044 - Math.abs(frac) * 0.008) * scaleFactor,
-          14,
+          12,
+          (0.038 - Math.abs(frac) * 0.006) * scaleFactor,
+          12,
           false
         );
         const bang = new THREE.Mesh(bangGeo, hairMat);
         bang.position.set(
-          frac * 0.08 * scaleFactor,
-          headCenterY + 0.12 * scaleFactor,
-          headRadius * 0.89 - Math.abs(frac) * 0.055 * scaleFactor
+          frac * 0.075 * scaleFactor,
+          headCenterY + headRadius * 0.56,
+          headRadius * 0.76 - Math.abs(frac) * 0.05 * scaleFactor
         );
-        bang.rotation.x = 0.16;
+        bang.rotation.x = 0.08;
         headPivot.add(bang);
       }
     }
@@ -1956,24 +1949,24 @@ function buildSculptedHumanoidAssembly(spec: HumanoidSpec): SculptedHumanoidPart
       const sideCurve = new THREE.CatmullRomCurve3([
         new THREE.Vector3(0, 0.04 * scaleFactor, 0),
         new THREE.Vector3(
-          side * 0.03 * scaleFactor,
-          -0.07 * scaleFactor,
-          0.03 * scaleFactor
+          side * 0.025 * scaleFactor,
+          -0.06 * scaleFactor,
+          -0.01 * scaleFactor
         ),
         new THREE.Vector3(
           side * 0.01 * scaleFactor,
-          -0.17 * scaleFactor,
-          0.05 * scaleFactor
+          -0.14 * scaleFactor,
+          0.0 * scaleFactor
         ),
       ]);
       const sideLock = new THREE.Mesh(
-        new THREE.TubeGeometry(sideCurve, 12, 0.036 * scaleFactor, 12, false),
+        new THREE.TubeGeometry(sideCurve, 12, 0.034 * scaleFactor, 12, false),
         hairMat
       );
       sideLock.position.set(
-        side * headRadius * 0.98,
+        side * headRadius * 0.99,
         headCenterY + 0.05 * scaleFactor,
-        0.08 * scaleFactor
+        -0.01 * scaleFactor
       );
       headPivot.add(sideLock);
     });
@@ -2134,14 +2127,14 @@ function buildSculptedHumanoidAssembly(spec: HumanoidSpec): SculptedHumanoidPart
 
     const capBrim = new THREE.Mesh(
       makeCurvedCapVisorGeo(
-        0.56 * scaleFactor,
-        0.3 * scaleFactor,
+        0.54 * scaleFactor,
+        0.27 * scaleFactor,
         0.022 * scaleFactor
       ),
       redCapMat
     );
-    capBrim.position.set(0, headCenterY + 0.135 * scaleFactor, headRadius * 0.72);
-    capBrim.rotation.x = 0.08;
+    capBrim.position.set(0, headCenterY + headRadius * 0.48, headRadius * 0.72);
+    capBrim.rotation.x = -0.05;
 
     const capButton = new THREE.Mesh(
       new THREE.SphereGeometry(0.032 * scaleFactor, 20, 14),
@@ -2527,6 +2520,9 @@ function buildSculptedHumanoidAssembly(spec: HumanoidSpec): SculptedHumanoidPart
     handMount.position.set(0, -0.235 * scaleFactor, 0.048 * scaleFactor);
     forearmPivot.add(handMount);
 
+    // Relaxed natural arms at sides (±0.18 rad, zero T-pose)
+    shoulder.rotation.z = side * 0.18;
+    forearmPivot.rotation.x = -0.14;
     bodyPivot.add(shoulder);
     return { shoulder, forearmPivot, handMount };
   };

@@ -46,7 +46,6 @@ import {
   disposeEnvironment,
   EnvironmentHandle,
 } from './environments';
-import { preloadCoreCharacterGLBs } from './gltfCharacterEngine';
 import {
   buildMotionCurve,
   MotionPathVisualizer,
@@ -356,8 +355,6 @@ export const StudioViewport = forwardRef<StudioViewportHandle, StudioViewportPro
       const mount = canvasMountRef.current;
       const frameEl = frameContainerRef.current;
       if (!mount || !frameEl) return;
-
-      preloadCoreCharacterGLBs();
 
       const isSoftwareGl = detectSoftwareGl();
       const renderer = new THREE.WebGLRenderer({
