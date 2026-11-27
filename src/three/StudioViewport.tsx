@@ -46,6 +46,7 @@ import {
   disposeEnvironment,
   EnvironmentHandle,
 } from './environments';
+import { preloadCoreCharacterGLBs } from './gltfCharacterEngine';
 import {
   buildMotionCurve,
   MotionPathVisualizer,
@@ -355,6 +356,8 @@ export const StudioViewport = forwardRef<StudioViewportHandle, StudioViewportPro
       const mount = canvasMountRef.current;
       const frameEl = frameContainerRef.current;
       if (!mount || !frameEl) return;
+
+      preloadCoreCharacterGLBs();
 
       const isSoftwareGl = detectSoftwareGl();
       const renderer = new THREE.WebGLRenderer({
@@ -863,7 +866,8 @@ export const StudioViewport = forwardRef<StudioViewportHandle, StudioViewportPro
             inst.motionPathViz.group.visible = false;
           }
 
-          const animClockTime = !playing && (scrubbing || sceneTime > 0.005) ? sceneTime : elapsed;
+          const isScrubMode = !playing && (scrubbing || sceneTime > 0.005);
+          const animClockTime = isScrubMode ? sceneTime : elapsed;
 
           inst.rigs.forEach((entry) => {
             const { actor } = entry;
@@ -973,7 +977,8 @@ export const StudioViewport = forwardRef<StudioViewportHandle, StudioViewportPro
                 animClockTime,
                 delta,
                 lipAmp,
-                autoLipSync
+                autoLipSync,
+                isScrubMode
               );
             } else if (entry.kindTag === 'animal') {
               updateAnimalAnimation(

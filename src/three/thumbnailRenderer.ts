@@ -200,7 +200,7 @@ function frameAndRender(
   return dataUrl;
 }
 
-function renderSingleSpec(spec: ThumbnailSpec): string | null {
+async function renderSingleSpec(spec: ThumbnailSpec): Promise<string | null> {
   const ctx = getSharedContext();
   if (!ctx) return null;
 
@@ -218,18 +218,20 @@ function renderSingleSpec(spec: ThumbnailSpec): string | null {
         rigB.root.position.set(0.34, 0, 0);
         rigA.selectionRing.visible = false;
         rigB.selectionRing.visible = false;
-        updateCharacterAnimation(rigA, 'Idle', 'Happy', 0.25, 0.016, 0, false);
-        updateCharacterAnimation(rigB, 'Idle', 'Happy', 0.25, 0.016, 0, false);
         container.add(rigA.root, rigB.root);
         charRigs.push(rigA, rigB);
+        await Promise.all([rigA.readyPromise, rigB.readyPromise]);
+        updateCharacterAnimation(rigA, 'Idle', 'Happy', 0.25, 0.016, 0, false, true);
+        updateCharacterAnimation(rigB, 'Idle', 'Happy', 0.25, 0.016, 0, false, true);
       } else {
         const k = spec.kind as CharacterKind;
         const meta = CHARACTER_META[k] || CHARACTER_META.boy;
         const rig = createCharacterRig(k, meta.defaultColor);
         rig.selectionRing.visible = false;
-        updateCharacterAnimation(rig, 'Idle', 'Happy', 0.25, 0.016, 0, false);
         container.add(rig.root);
         charRigs.push(rig);
+        await rig.readyPromise;
+        updateCharacterAnimation(rig, 'Idle', 'Happy', 0.25, 0.016, 0, false, true);
       }
     } else if (spec.actorType === 'animal') {
       const k = spec.kind as AnimalKind;
@@ -281,21 +283,28 @@ function renderSingleSpec(spec: ThumbnailSpec): string | null {
   }
 }
 
-function processQueueBatch() {
+let isProcessingQueue = false;
+
+async function processQueueBatch() {
   rafScheduled = false;
-  if (pendingQueue.length === 0 || webglDisabled) return;
+  if (isProcessingQueue || pendingQueue.length === 0 || webglDisabled) return;
+  isProcessingQueue = true;
 
-  const batchSize = 2;
-  for (let i = 0; i < batchSize && pendingQueue.length > 0; i++) {
-    const spec = pendingQueue.shift()!;
-    queuedKeys.delete(spec.key);
-    if (thumbnailCache.has(spec.key)) continue;
+  try {
+    const batchSize = 2;
+    for (let i = 0; i < batchSize && pendingQueue.length > 0; i++) {
+      const spec = pendingQueue.shift()!;
+      queuedKeys.delete(spec.key);
+      if (thumbnailCache.has(spec.key)) continue;
 
-    const url = renderSingleSpec(spec);
-    if (url) {
-      thumbnailCache.set(spec.key, url);
-      listeners.forEach((cb) => cb(spec.key, url));
+      const url = await renderSingleSpec(spec);
+      if (url) {
+        thumbnailCache.set(spec.key, url);
+        listeners.forEach((cb) => cb(spec.key, url));
+      }
     }
+  } finally {
+    isProcessingQueue = false;
   }
 
   if (pendingQueue.length > 0) {
@@ -304,12 +313,16 @@ function processQueueBatch() {
 }
 
 function scheduleBatch() {
-  if (rafScheduled || pendingQueue.length === 0 || webglDisabled) return;
+  if (rafScheduled || isProcessingQueue || pendingQueue.length === 0 || webglDisabled) return;
   rafScheduled = true;
   if (typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function') {
-    window.requestAnimationFrame(processQueueBatch);
+    window.requestAnimationFrame(() => {
+      void processQueueBatch();
+    });
   } else {
-    setTimeout(processQueueBatch, 16);
+    setTimeout(() => {
+      void processQueueBatch();
+    }, 16);
   }
 }
 

@@ -1112,3 +1112,316 @@ export function createSkyDomeTexture(
   tex.needsUpdate = true;
   return tex;
 }
+
+export interface CharacterPBRTextureSet {
+  map: THREE.CanvasTexture;
+  normalMap: THREE.DataTexture;
+  roughnessMap: THREE.DataTexture;
+}
+
+function buildNormalAndRoughnessFromHeight(
+  heightField: Float32Array,
+  roughField: Float32Array,
+  size: number,
+  normalStrength = 2.4
+): { normalMap: THREE.DataTexture; roughnessMap: THREE.DataTexture } {
+  const normalBytes = new Uint8Array(size * size * 4);
+  const roughBytes = new Uint8Array(size * size * 4);
+
+  for (let y = 0; y < size; y++) {
+    const ym = (y - 1 + size) % size;
+    const yp = (y + 1) % size;
+    for (let x = 0; x < size; x++) {
+      const xm = (x - 1 + size) % size;
+      const xp = (x + 1) % size;
+
+      const hL = heightField[y * size + xm];
+      const hR = heightField[y * size + xp];
+      const hU = heightField[ym * size + x];
+      const hD = heightField[yp * size + x];
+
+      const dx = (hL - hR) * normalStrength;
+      const dy = (hU - hD) * normalStrength;
+      const dz = 1.0;
+      const invLen = 1 / Math.hypot(dx, dy, dz);
+
+      const idx = (y * size + x) * 4;
+      normalBytes[idx] = Math.round((dx * invLen * 0.5 + 0.5) * 255);
+      normalBytes[idx + 1] = Math.round((dy * invLen * 0.5 + 0.5) * 255);
+      normalBytes[idx + 2] = Math.round((dz * invLen * 0.5 + 0.5) * 255);
+      normalBytes[idx + 3] = 255;
+
+      const rv = Math.max(0, Math.min(255, Math.round(roughField[y * size + x] * 255)));
+      roughBytes[idx] = rv;
+      roughBytes[idx + 1] = rv;
+      roughBytes[idx + 2] = rv;
+      roughBytes[idx + 3] = 255;
+    }
+  }
+
+  const normalMap = new THREE.DataTexture(normalBytes, size, size, THREE.RGBAFormat);
+  normalMap.wrapS = THREE.RepeatWrapping;
+  normalMap.wrapT = THREE.RepeatWrapping;
+  normalMap.needsUpdate = true;
+  normalMap.userData.sharedResource = true;
+
+  const roughnessMap = new THREE.DataTexture(roughBytes, size, size, THREE.RGBAFormat);
+  roughnessMap.wrapS = THREE.RepeatWrapping;
+  roughnessMap.wrapT = THREE.RepeatWrapping;
+  roughnessMap.needsUpdate = true;
+  roughnessMap.userData.sharedResource = true;
+
+  return { normalMap, roughnessMap };
+}
+
+export type ClothPBRPattern = 'casual' | 'royal' | 'uniform' | 'hero' | 'fantasy';
+
+const clothPBRCache = new Map<string, CharacterPBRTextureSet>();
+
+export function createCharacterPBRClothSet(
+  primaryHex: string,
+  trimHex = '#facc15',
+  pattern: ClothPBRPattern = 'casual',
+  maxAnisotropy = 4
+): CharacterPBRTextureSet {
+  const key = `${primaryHex.toLowerCase()}_${trimHex.toLowerCase()}_${pattern}`;
+  const cached = clothPBRCache.get(key);
+  if (cached) return cached;
+
+  const size = 512;
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d')!;
+
+  const base = new THREE.Color(primaryHex);
+  const lighter = base.clone().offsetHSL(0, -0.04, 0.09).getStyle();
+  const darker = base.clone().offsetHSL(0, 0.06, -0.11).getStyle();
+  const trim = new THREE.Color(trimHex).getStyle();
+
+  const grad = ctx.createLinearGradient(0, 0, 0, size);
+  grad.addColorStop(0, lighter);
+  grad.addColorStop(0.55, base.getStyle());
+  grad.addColorStop(1, darker);
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, size, size);
+
+  // Fine woven twill threads + subtle fabric folds
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.08)';
+  ctx.lineWidth = 1.5;
+  for (let i = -size; i < size * 2; i += 6) {
+    ctx.beginPath();
+    ctx.moveTo(i, 0);
+    ctx.lineTo(i + size, size);
+    ctx.stroke();
+  }
+  ctx.strokeStyle = 'rgba(15, 23, 42, 0.09)';
+  for (let y = 0; y < size; y += 6) {
+    ctx.beginPath();
+    ctx.moveTo(0, y);
+    ctx.lineTo(size, y);
+    ctx.stroke();
+  }
+
+  // Pattern accents (royal brocade, uniform piping, hero seam lines, fantasy stars)
+  if (pattern === 'royal') {
+    ctx.strokeStyle = trim;
+    ctx.globalAlpha = 0.28;
+    ctx.lineWidth = 3;
+    for (let y = 32; y < size; y += 64) {
+      for (let x = 32; x < size; x += 64) {
+        ctx.beginPath();
+        ctx.moveTo(x, y - 14);
+        ctx.lineTo(x + 14, y);
+        ctx.lineTo(x, y + 14);
+        ctx.lineTo(x - 14, y);
+        ctx.closePath();
+        ctx.stroke();
+      }
+    }
+    ctx.globalAlpha = 1;
+  } else if (pattern === 'hero' || pattern === 'uniform') {
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.16)';
+    ctx.lineWidth = 4;
+    ctx.strokeRect(18, 18, size - 36, size - 36);
+    ctx.strokeStyle = trim;
+    ctx.globalAlpha = 0.45;
+    ctx.lineWidth = 6;
+    ctx.beginPath();
+    ctx.moveTo(0, size * 0.48);
+    ctx.lineTo(size, size * 0.48);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+  } else if (pattern === 'fantasy') {
+    ctx.fillStyle = trim;
+    ctx.globalAlpha = 0.25;
+    for (let i = 0; i < 42; i++) {
+      const sx = ((i * 113 + 29) % (size - 32)) + 16;
+      const sy = ((i * 197 + 41) % (size - 32)) + 16;
+      ctx.beginPath();
+      ctx.arc(sx, sy, 2.5 + (i % 3), 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  // Soft tailored stitch lines
+  ctx.setLineDash([8, 6]);
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.28)';
+  ctx.lineWidth = 2;
+  ctx.strokeRect(10, 10, size - 20, size - 20);
+  ctx.setLineDash([]);
+
+  const map = configureColorTexture(canvas, 2, 2, maxAnisotropy);
+  map.userData.sharedResource = true;
+
+  // Height & roughness fields for tactile cloth weave normalMap + roughnessMap
+  const heightField = new Float32Array(size * size);
+  const roughField = new Float32Array(size * size);
+  const baseRough = pattern === 'hero' ? 0.46 : pattern === 'royal' ? 0.56 : 0.76;
+
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const weave =
+        Math.sin((x + y) * 0.78) * 0.35 +
+        Math.sin((x - y) * 0.78) * 0.2 +
+        Math.sin(y * 1.1) * 0.15;
+      const crease = Math.sin(x * 0.045) * Math.cos(y * 0.032) * 0.25;
+      const i = y * size + x;
+      heightField[i] = weave * 0.4 + crease;
+      roughField[i] = Math.max(0.22, Math.min(0.95, baseRough - weave * 0.08));
+    }
+  }
+
+  const { normalMap, roughnessMap } = buildNormalAndRoughnessFromHeight(
+    heightField,
+    roughField,
+    size,
+    1.8
+  );
+
+  const set: CharacterPBRTextureSet = { map, normalMap, roughnessMap };
+  clothPBRCache.set(key, set);
+  return set;
+}
+
+const skinPBRCache = new Map<string, CharacterPBRTextureSet>();
+
+export function createCharacterPBRSkinSet(
+  skinHex = '#f7cbb2',
+  maxAnisotropy = 4
+): CharacterPBRTextureSet {
+  const key = skinHex.toLowerCase();
+  const cached = skinPBRCache.get(key);
+  if (cached) return cached;
+
+  const size = 512;
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d')!;
+
+  const base = new THREE.Color(skinHex);
+  const warm = base.clone().offsetHSL(-0.01, 0.08, 0.05).getStyle();
+  const rosy = base.clone().lerp(new THREE.Color('#fb7185'), 0.22).getStyle();
+
+  const grad = ctx.createRadialGradient(256, 230, 24, 256, 256, 300);
+  grad.addColorStop(0, warm);
+  grad.addColorStop(0.65, base.getStyle());
+  grad.addColorStop(1, rosy);
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, size, size);
+
+  const map = configureColorTexture(canvas, 1, 1, maxAnisotropy);
+  map.userData.sharedResource = true;
+
+  const heightField = new Float32Array(size * size);
+  const roughField = new Float32Array(size * size);
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const micro =
+        Math.sin(x * 0.9 + Math.cos(y * 0.7)) * 0.12 +
+        Math.cos(y * 0.85) * 0.08;
+      const i = y * size + x;
+      heightField[i] = micro;
+      roughField[i] = 0.46 + micro * 0.08;
+    }
+  }
+  const { normalMap, roughnessMap } = buildNormalAndRoughnessFromHeight(
+    heightField,
+    roughField,
+    size,
+    0.75
+  );
+
+  const set: CharacterPBRTextureSet = { map, normalMap, roughnessMap };
+  skinPBRCache.set(key, set);
+  return set;
+}
+
+const robotPBRCache = new Map<string, CharacterPBRTextureSet>();
+
+export function createRobotMetalPBRSet(
+  accentHex = '#38bdf8',
+  maxAnisotropy = 4
+): CharacterPBRTextureSet {
+  const key = accentHex.toLowerCase();
+  const cached = robotPBRCache.get(key);
+  if (cached) return cached;
+
+  const size = 512;
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d')!;
+
+  const base = new THREE.Color(accentHex);
+  const bright = base.clone().offsetHSL(0, -0.05, 0.14).getStyle();
+  const deep = base.clone().offsetHSL(0, 0.05, -0.14).getStyle();
+
+  const grad = ctx.createLinearGradient(0, 0, size, size);
+  grad.addColorStop(0, bright);
+  grad.addColorStop(0.5, base.getStyle());
+  grad.addColorStop(1, deep);
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, size, size);
+
+  // Subtle brushed aluminum streaks & armor panel grooves
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.14)';
+  ctx.lineWidth = 1.5;
+  for (let y = 0; y < size; y += 4) {
+    ctx.beginPath();
+    ctx.moveTo(0, y);
+    ctx.lineTo(size, y);
+    ctx.stroke();
+  }
+  ctx.strokeStyle = 'rgba(15, 23, 42, 0.35)';
+  ctx.lineWidth = 3;
+  ctx.strokeRect(16, 16, size - 32, size - 32);
+
+  const map = configureColorTexture(canvas, 1, 1, maxAnisotropy);
+  map.userData.sharedResource = true;
+
+  const heightField = new Float32Array(size * size);
+  const roughField = new Float32Array(size * size);
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const seam = x < 18 || x > size - 18 || y < 18 || y > size - 18 ? -0.35 : 0;
+      const brush = Math.sin(y * 1.6) * 0.08;
+      const i = y * size + x;
+      heightField[i] = seam + brush;
+      roughField[i] = seam < 0 ? 0.55 : 0.24 + Math.abs(brush) * 0.4;
+    }
+  }
+  const { normalMap, roughnessMap } = buildNormalAndRoughnessFromHeight(
+    heightField,
+    roughField,
+    size,
+    1.5
+  );
+
+  const set: CharacterPBRTextureSet = { map, normalMap, roughnessMap };
+  robotPBRCache.set(key, set);
+  return set;
+}
+

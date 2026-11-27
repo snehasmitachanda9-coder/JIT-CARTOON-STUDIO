@@ -65,6 +65,33 @@ import { generateOfflineProceduralModel } from './utils/offlineModelGenerator';
 
 const CUSTOM_MODELS_KEY = 'jit_custom_3d_models_v1';
 const LEGACY_CUSTOM_MODELS_KEY = 'jit-3d-custom-models-v1';
+const CHARACTER_ENGINE_VERSION_KEY = 'jit_3d_engine_version';
+const CHARACTER_ENGINE_VERSION = 'gltf_v2';
+
+function clearOldCachedSceneStateOnLoad(): void {
+  try {
+    if (typeof window === 'undefined' || !window.localStorage) return;
+    const keysToDelete: string[] = [];
+    for (let i = 0; i < window.localStorage.length; i++) {
+      const k = window.localStorage.key(i);
+      if (!k) continue;
+      if (
+        k === LEGACY_CUSTOM_MODELS_KEY ||
+        /^(jit[-_]?(scene|scenes|story|studio|timeline|actors?|cache)|scene[-_]?state|studio[-_]?state|cartoon[-_]?studio)/i.test(
+          k
+        )
+      ) {
+        keysToDelete.push(k);
+      }
+    }
+    keysToDelete.forEach((k) => window.localStorage.removeItem(k));
+    window.localStorage.setItem(CHARACTER_ENGINE_VERSION_KEY, CHARACTER_ENGINE_VERSION);
+  } catch {
+    // ignore storage access errors in restricted frames
+  }
+}
+
+clearOldCachedSceneStateOnLoad();
 
 let uidCounter = 100;
 const nextId = (prefix: string) => `${prefix}-${++uidCounter}`;
@@ -180,9 +207,7 @@ function createInitialScenes(): SceneData[] {
 
 function loadSavedCustomModels(): CustomModelBlueprint[] {
   try {
-    const raw =
-      localStorage.getItem(CUSTOM_MODELS_KEY) ||
-      localStorage.getItem(LEGACY_CUSTOM_MODELS_KEY);
+    const raw = localStorage.getItem(CUSTOM_MODELS_KEY);
     if (!raw) return [];
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];
