@@ -2234,7 +2234,7 @@ function buildSculptedHumanoidAssembly(spec: HumanoidSpec): SculptedHumanoidPart
     }
   } else if (headwear === 'crown' || headwear === 'tiara') {
     const crown = createCrownMesh(headwear === 'tiara');
-    crown.position.y = headCenterY + 0.25 * scaleFactor;
+    crown.position.y = headCenterY + headRadius * 0.9;
     headPivot.add(crown);
   } else if (headwear === 'halo') {
     const halo = new THREE.Mesh(
@@ -2245,18 +2245,18 @@ function buildSculptedHumanoidAssembly(spec: HumanoidSpec): SculptedHumanoidPart
       })
     );
     halo.rotation.x = Math.PI / 2;
-    halo.position.y = headCenterY + 0.4 * scaleFactor;
+    halo.position.y = headCenterY + headRadius * 1.24;
     headPivot.add(halo);
   } else if (headwear === 'wreath') {
     const wreath = new THREE.Mesh(
-      new THREE.TorusGeometry(0.25 * scaleFactor, 0.028, 16, 36),
+      new THREE.TorusGeometry(0.26 * scaleFactor, 0.028, 16, 36),
       makeStudioGlossyMat(0xf472b6, {
         emissive: 0xec4899,
         emissiveIntensity: 0.35,
       })
     );
     wreath.rotation.x = Math.PI / 2.3;
-    wreath.position.y = headCenterY + 0.19 * scaleFactor;
+    wreath.position.y = headCenterY + headRadius * 0.68;
     headPivot.add(wreath);
   } else if (headwear === 'witchHat' || headwear === 'wizardHat') {
     const hatMat =
