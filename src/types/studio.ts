@@ -94,13 +94,15 @@ export type HandheldItemKind =
   | 'bag'
   | 'umbrella'
   | 'customImage'
-  | 'custom3D';
+  | 'custom3D'
+  | 'customGLB';
 
 export interface HeldItemAttachment {
   itemKind: HandheldItemKind;
   label: string;
   imageDataUrl?: string;
   removeBg?: boolean;
+  glbUrl?: string;
   customBlueprint?: CustomModelBlueprint;
   scale: number; // 0.35..2.2
   rotationDeg: number; // -180..180
@@ -243,13 +245,19 @@ export interface CustomModelStyleSpec {
   accessories?: string[];
 }
 
+export type CustomModelAssetType = 'procedural' | 'cutout' | 'glb';
+
 export interface CustomModelBlueprint {
   id: string;
   name: string;
   category: 'character' | 'creature' | 'vehicle' | 'prop';
   prompt: string;
-  source: 'gemini' | 'offline';
+  source: 'gemini' | 'offline' | 'upload';
   createdAt: number;
+  assetType?: CustomModelAssetType;
+  imageDataUrl?: string;
+  removeBg?: boolean;
+  glbUrl?: string;
   style?: CustomModelStyleSpec;
   parts: CustomModelPart[];
 }
@@ -376,6 +384,13 @@ export interface SceneActor {
   voiceEndTime?: number;
 }
 
+export interface CustomBackgroundConfig {
+  url: string;
+  name: string;
+  mediaType: 'image' | 'video';
+  showGround: boolean;
+}
+
 export interface SceneData {
   id: string;
   title: string;
@@ -387,6 +402,7 @@ export interface SceneData {
   cameraZoom: CameraZoomMode;
   cameraStartTime?: number;
   cameraEndTime?: number;
+  customBackground?: CustomBackgroundConfig | null;
   actors: SceneActor[];
   audio: SceneAudioTrack | null;
 }

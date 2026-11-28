@@ -44,6 +44,7 @@ import {
   CHARACTER_META,
   CharacterKind,
   CUSTOM_MODEL_RETENTION_MS,
+  CustomBackgroundConfig,
   CustomModelBlueprint,
   ENVIRONMENT_META,
   EnvironmentId,
@@ -69,7 +70,7 @@ import { generateOfflineProceduralModel } from './utils/offlineModelGenerator';
 const CUSTOM_MODELS_KEY = 'jit_custom_3d_models_v1';
 const LEGACY_CUSTOM_MODELS_KEY = 'jit-3d-custom-models-v1';
 const CHARACTER_ENGINE_VERSION_KEY = 'jit_3d_engine_version';
-const CHARACTER_ENGINE_VERSION = 'chibi_sculptor_v3';
+const CHARACTER_ENGINE_VERSION = 'chibi_animals_uploads_v4';
 
 function clearOldCachedSceneStateOnLoad(): void {
   try {
@@ -99,7 +100,10 @@ clearOldCachedSceneStateOnLoad();
 let uidCounter = 100;
 const nextId = (prefix: string) => `${prefix}-${++uidCounter}`;
 
-function createBlankScenes(env: EnvironmentId = 'village'): SceneData[] {
+function createBlankScenes(
+  env: EnvironmentId = 'village',
+  customBackground: CustomBackgroundConfig | null = null
+): SceneData[] {
   return [
     {
       id: nextId('scene'),
@@ -110,6 +114,7 @@ function createBlankScenes(env: EnvironmentId = 'village'): SceneData[] {
       cameraPose: { ...ENVIRONMENT_META[env].defaultCamera },
       cameraPreset: 'wide',
       cameraZoom: 'none',
+      customBackground,
       audio: null,
       actors: [],
     },
@@ -117,8 +122,9 @@ function createBlankScenes(env: EnvironmentId = 'village'): SceneData[] {
 }
 
 function createProjectFromConfig(cfg: NewProjectConfig): SceneData[] {
+  const customBg = cfg.customBackground ?? null;
   if (cfg.templateId === 'blank') {
-    return createBlankScenes(cfg.blankEnvironment);
+    return createBlankScenes(cfg.blankEnvironment, customBg);
   }
 
   if (cfg.templateId === 'classroom') {
@@ -384,13 +390,18 @@ function loadSavedCustomModels(): CustomModelBlueprint[] {
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];
     const now = Date.now();
-    // Auto-purge models older than 60 days while normalizing createdAt
+    // Auto-purge models older than 60 days & drop ephemeral blob: URLs from closed tabs
     return parsed
       .map((item) => ({
         ...item,
         createdAt: typeof item?.createdAt === 'number' ? item.createdAt : now,
       }))
-      .filter((item) => now - item.createdAt < CUSTOM_MODEL_RETENTION_MS);
+      .filter(
+        (item) =>
+          now - item.createdAt < CUSTOM_MODEL_RETENTION_MS &&
+          !item?.glbUrl?.startsWith('blob:') &&
+          !item?.imageDataUrl?.startsWith('blob:')
+      );
   } catch {
     return [];
   }
@@ -607,7 +618,11 @@ export default function App() {
 
   const handleCreateProject = useCallback(
     (cfg: NewProjectConfig) => {
-      const nextScenes = createProjectFromConfig(cfg);
+      const nextScenes = createProjectFromConfig(cfg).map((s) =>
+        cfg.customBackground
+          ? { ...s, customBackground: cfg.customBackground }
+          : s
+      );
       audioManagerRef.current?.stop();
       historyPastRef.current = [];
       historyFutureRef.current = [];
@@ -791,13 +806,38 @@ export default function App() {
       commitScenes((prev) =>
         prev.map((s) =>
           s.id === activeSceneId
-            ? { ...s, environment: env, cameraPose: { ...cam } }
+            ? { ...s, environment: env, cameraPose: { ...cam }, customBackground: null }
             : s
         )
       );
       triggerCameraPose(cam);
     },
     [activeSceneId, commitScenes, triggerCameraPose]
+  );
+
+  const handleChangeCustomBackground = useCallback(
+    (bg: CustomBackgroundConfig | null) => {
+      commitScenes((prev) =>
+        prev.map((s) =>
+          s.id === activeSceneId ? { ...s, customBackground: bg } : s
+        )
+      );
+      showNotice(bg ? `Background set to "${bg.name}"` : 'Restored 3D environment backdrop');
+    },
+    [activeSceneId, commitScenes, showNotice]
+  );
+
+  const handleToggleCustomGround = useCallback(
+    (show: boolean) => {
+      commitScenes((prev) =>
+        prev.map((s) =>
+          s.id === activeSceneId && s.customBackground
+            ? { ...s, customBackground: { ...s.customBackground, showGround: show } }
+            : s
+        )
+      );
+    },
+    [activeSceneId, commitScenes]
   );
 
   const handleChangeLighting = useCallback(
@@ -1691,6 +1731,111 @@ export default function App() {
     [activeSceneId, commitScenes, isOnline, showNotice]
   );
 
+  // Upload Custom PNG/JPG Character/Prop Cutout OR .GLB/.GLTF 3D File into Library & Open Activity Picker
+  const handleUploadCustomAsset = useCallback(
+    async (
+      file: File,
+      opts: { category: 'character' | 'prop'; removeBg: boolean }
+    ) => {
+      const isGlb = /\.(glb|gltf)$/i.test(file.name) || file.type.includes('gltf');
+      const cleanName = file.name.replace(/\.[^/.]+$/, '').slice(0, 26) || 'Custom Asset';
+
+      const readFileAsDataUrl = (f: File): Promise<string> =>
+        new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () =>
+            resolve(typeof reader.result === 'string' ? reader.result : '');
+          reader.onerror = () => reject(new Error('Failed to read file'));
+          reader.readAsDataURL(f);
+        });
+
+      let bp: CustomModelBlueprint;
+      if (isGlb) {
+        const glbUrl =
+          file.size <= 2_500_000
+            ? await readFileAsDataUrl(file)
+            : URL.createObjectURL(file);
+        bp = {
+          id: `upload-glb-${Date.now()}`,
+          name: cleanName,
+          category: opts.category,
+          prompt: `Uploaded 3D file: ${file.name}`,
+          source: 'upload',
+          createdAt: Date.now(),
+          assetType: 'glb',
+          glbUrl,
+          parts: [],
+        };
+      } else {
+        const imageDataUrl = await readFileAsDataUrl(file);
+        bp = {
+          id: `upload-img-${Date.now()}`,
+          name: cleanName,
+          category: opts.category,
+          prompt: `Uploaded image cutout: ${file.name}`,
+          source: 'upload',
+          createdAt: Date.now(),
+          assetType: 'cutout',
+          imageDataUrl,
+          removeBg: opts.removeBg,
+          parts: [],
+        };
+      }
+
+      setCustomModels((prev) => [bp, ...prev]);
+      handleOpenLibraryPicker('custom', bp.id, bp.name, bp);
+      showNotice(`Imported "${bp.name}"! Choose an activity to place on stage.`);
+    },
+    [handleOpenLibraryPicker, showNotice]
+  );
+
+  // Upload .GLB/.GLTF directly into a Character's Left or Right Hand
+  const handleUploadHandheldGLB = useCallback(
+    (actorId: string, hand: 'left' | 'right', file: File) => {
+      const cleanName = file.name.replace(/\.[^/.]+$/, '').slice(0, 20) || '3D Prop';
+      const attach = (glbUrl: string) => {
+        const attachment = {
+          itemKind: 'customGLB' as HandheldItemKind,
+          label: cleanName,
+          glbUrl,
+          scale: 1,
+          rotationDeg: 0,
+          offsetY: 0,
+          offsetZ: 0,
+        };
+        commitScenes((prev) =>
+          prev.map((s) =>
+            s.id === activeSceneId
+              ? {
+                  ...s,
+                  actors: s.actors.map((a) =>
+                    a.id === actorId
+                      ? hand === 'left'
+                        ? { ...a, heldItemLeft: attachment }
+                        : { ...a, heldItemRight: attachment }
+                      : a
+                  ),
+                }
+              : s
+          )
+        );
+        showNotice(`Equipped "${cleanName}" in ${hand} hand.`);
+      };
+
+      if (file.size <= 2_500_000) {
+        const reader = new FileReader();
+        reader.onload = () => {
+          const url = typeof reader.result === 'string' ? reader.result : '';
+          if (url) attach(url);
+        };
+        reader.readAsDataURL(file);
+      } else {
+        attach(URL.createObjectURL(file));
+      }
+    },
+    [activeSceneId, commitScenes, showNotice]
+  );
+
   // AI Story Writer
   const handleGenerateAIStory = useCallback(
     async (
@@ -2031,6 +2176,7 @@ export default function App() {
             ref={viewportRef}
             environment={activeScene.environment}
             lighting={activeScene.lighting}
+            customBackground={activeScene.customBackground ?? null}
             actors={activeScene.actors}
             selectedActorId={selectedActorId}
             aspectRatio={aspectRatio}
@@ -2091,6 +2237,10 @@ export default function App() {
           onGenerateHandheldAIProp={handleGenerateHandheldAIProp}
           onGenerateAIStory={handleGenerateAIStory}
           onLoadStoryScript={handleLoadStoryScript}
+          onUploadCustomAsset={handleUploadCustomAsset}
+          onUploadHandheldGLB={handleUploadHandheldGLB}
+          onChangeCustomBackground={handleChangeCustomBackground}
+          onToggleCustomGround={handleToggleCustomGround}
         />
       </div>
 

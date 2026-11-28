@@ -142,7 +142,7 @@ export function updateCharacterAccentColor(rig: CharacterRig, hexColor: string):
 
 function getHeldItemSig(item?: HeldItemAttachment | null): string {
   if (!item || item.itemKind === 'none') return 'none';
-  return `${item.itemKind}|${item.imageDataUrl || ''}|${Boolean(item.removeBg)}|${item.customBlueprint?.id || ''}`;
+  return `${item.itemKind}|${item.imageDataUrl || ''}|${item.glbUrl || ''}|${Boolean(item.removeBg)}|${item.customBlueprint?.id || ''}`;
 }
 
 export function syncCharacterHeldItems(

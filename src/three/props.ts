@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import {
   ActorType,
   AnimationState,
@@ -18,6 +19,7 @@ import {
   buildHighDetail3DModel,
   makeRoundedBlockGeo,
 } from './highDetailModelBuilder';
+import { createImageCutoutTexture } from './handhelds';
 
 export interface PropOrCustomRig {
   kind: string;
@@ -50,6 +52,9 @@ export interface PropOrCustomRig {
   accentMeshes: THREE.Mesh[];
   headHeight: number;
   baseBodyY: number;
+  mixer?: THREE.AnimationMixer;
+  readyPromise?: Promise<void>;
+  onDispose?: () => void;
 }
 
 let sharedShadowTex: THREE.CanvasTexture | null = null;
@@ -715,6 +720,210 @@ export function createPropRig(kind: PropKind, accentColor: string): PropOrCustom
 }
 
 export function createCustomModelRig(blueprint: CustomModelBlueprint): PropOrCustomRig {
+  // 1. Custom PNG/JPG Character or Prop Cutout Billboard
+  if (blueprint.assetType === 'cutout' && blueprint.imageDataUrl) {
+    const root = new THREE.Group();
+    const bodyPivot = new THREE.Group();
+    root.add(bodyPivot);
+
+    const baseHeight = blueprint.category === 'character' ? 1.45 : 1.2;
+    const planeGeo = new THREE.PlaneGeometry(1.0, baseHeight);
+    const mat = new THREE.MeshStandardMaterial({
+      color: 0xffffff,
+      transparent: true,
+      alphaTest: 0.08,
+      side: THREE.DoubleSide,
+      roughness: 0.52,
+      metalness: 0.04,
+    });
+    const plane = new THREE.Mesh(planeGeo, mat);
+    plane.position.y = baseHeight * 0.5;
+    plane.castShadow = false;
+    plane.receiveShadow = false;
+    bodyPivot.add(plane);
+
+    // Subtle hit proxy so clicking semi-transparent edges still selects/drags smoothly
+    const hitProxy = new THREE.Mesh(
+      new THREE.BoxGeometry(0.9, baseHeight, 0.28),
+      new THREE.MeshBasicMaterial({ visible: false })
+    );
+    hitProxy.position.y = baseHeight * 0.5;
+    hitProxy.userData.isHitProxy = true;
+    root.add(hitProxy);
+
+    let cancelled = false;
+    const readyPromise = new Promise<void>((resolve) => {
+      createImageCutoutTexture(
+        blueprint.imageDataUrl!,
+        Boolean(blueprint.removeBg),
+        (tex, aspect) => {
+          if (cancelled) {
+            tex.dispose();
+            resolve();
+            return;
+          }
+          mat.map = tex;
+          mat.needsUpdate = true;
+          const safeAspect = THREE.MathUtils.clamp(aspect || 1, 0.3, 3.2);
+          plane.scale.set(safeAspect, 1, 1);
+          hitProxy.scale.set(Math.max(0.65, safeAspect), 1, 1);
+          resolve();
+        },
+        512
+      );
+    });
+
+    const selectionRing = createSelectionRing(0.68);
+    const shadow = createContactShadow(0.62);
+    const speechSprite = createSpeechSprite(baseHeight + 0.52);
+    root.add(shadow, selectionRing, speechSprite);
+
+    return {
+      kind: blueprint.id,
+      actorType: 'custom',
+      isVehicleLike: false,
+      root,
+      bodyPivot,
+      wheels: [],
+      rotors: [],
+      propellers: [],
+      lamps: [],
+      wings: [],
+      tails: [],
+      selectionRing,
+      speechSprite,
+      lastDialogue: '',
+      accentMeshes: [],
+      headHeight: baseHeight,
+      baseBodyY: 0,
+      readyPromise,
+      onDispose: () => {
+        cancelled = true;
+      },
+    };
+  }
+
+  // 2. Custom .GLB / .GLTF 3D File Upload via GLTFLoader
+  if (blueprint.assetType === 'glb' && blueprint.glbUrl) {
+    const root = new THREE.Group();
+    const bodyPivot = new THREE.Group();
+    root.add(bodyPivot);
+
+    // Lightweight loading stand-in removed immediately once GLB finishes loading
+    const placeholder = new THREE.Mesh(
+      new THREE.OctahedronGeometry(0.32, 1),
+      new THREE.MeshStandardMaterial({
+        color: 0x38bdf8,
+        roughness: 0.35,
+        wireframe: true,
+      })
+    );
+    placeholder.position.y = 0.65;
+    bodyPivot.add(placeholder);
+
+    const hitProxy = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.5, 0.5, 1.55, 8),
+      new THREE.MeshBasicMaterial({ visible: false })
+    );
+    hitProxy.position.y = 0.78;
+    hitProxy.userData.isHitProxy = true;
+    root.add(hitProxy);
+
+    const selectionRing = createSelectionRing(0.76);
+    const shadow = createContactShadow(0.7);
+    const speechSprite = createSpeechSprite(1.9);
+    root.add(shadow, selectionRing, speechSprite);
+
+    const rig: PropOrCustomRig = {
+      kind: blueprint.id,
+      actorType: 'custom',
+      isVehicleLike: blueprint.category === 'vehicle',
+      root,
+      bodyPivot,
+      wheels: [],
+      rotors: [],
+      propellers: [],
+      lamps: [],
+      wings: [],
+      tails: [],
+      selectionRing,
+      speechSprite,
+      lastDialogue: '',
+      accentMeshes: [],
+      headHeight: 1.55,
+      baseBodyY: 0,
+    };
+
+    let cancelled = false;
+    rig.onDispose = () => {
+      cancelled = true;
+    };
+
+    const loader = new GLTFLoader();
+    rig.readyPromise = loader
+      .loadAsync(blueprint.glbUrl)
+      .then((gltf) => {
+        bodyPivot.remove(placeholder);
+        placeholder.geometry.dispose();
+        (placeholder.material as THREE.Material).dispose();
+
+        if (cancelled) return;
+        const model = gltf.scene;
+        model.updateMatrixWorld(true);
+
+        const box = new THREE.Box3().setFromObject(model);
+        const size = new THREE.Vector3();
+        const center = new THREE.Vector3();
+        if (!box.isEmpty()) {
+          box.getSize(size);
+          box.getCenter(center);
+        } else {
+          size.set(1, 1.5, 1);
+          center.set(0, 0.75, 0);
+        }
+
+        const maxDim = Math.max(size.x, size.y, size.z, 0.05);
+        const autoScale = 1.55 / maxDim;
+        model.scale.setScalar(autoScale);
+        model.position.set(
+          -center.x * autoScale,
+          -box.min.y * autoScale,
+          -center.z * autoScale
+        );
+
+        model.traverse((child) => {
+          if ((child as THREE.Mesh).isMesh) {
+            child.castShadow = true;
+            child.receiveShadow = true;
+          }
+        });
+        bodyPivot.add(model);
+
+        const scaledHeight = Math.max(0.75, size.y * autoScale);
+        rig.headHeight = scaledHeight;
+        rig.speechSprite.position.y = scaledHeight + 0.52;
+
+        if (gltf.animations && gltf.animations.length > 0) {
+          const mixer = new THREE.AnimationMixer(model);
+          const action = mixer.clipAction(gltf.animations[0]);
+          action.play();
+          rig.mixer = mixer;
+        }
+      })
+      .catch(() => {
+        bodyPivot.remove(placeholder);
+        const fallback = new THREE.Mesh(
+          makeRoundedBlockGeo(0.75, 1.1, 0.55, 0.2),
+          new THREE.MeshStandardMaterial({ color: 0xf59e0b, roughness: 0.45 })
+        );
+        fallback.position.y = 0.55;
+        bodyPivot.add(fallback);
+      });
+
+    return rig;
+  }
+
+  // 3. Procedural / AI High-Detail 3D Model
   const built = buildHighDetail3DModel({
     mode: 'custom',
     blueprint,
@@ -778,6 +987,10 @@ export function updatePropOrCustomAnimation(
 ): void {
   const k = 1 - Math.exp(-10 * Math.min(delta, 0.05));
   const t = elapsed;
+
+  if (rig.mixer) {
+    rig.mixer.update(Math.min(delta, 0.08));
+  }
 
   // Vehicle & Custom Vehicle Animations
   if (rig.actorType === 'vehicle' || rig.isVehicleLike) {
@@ -991,6 +1204,10 @@ export function updatePropOrCustomAnimation(
 }
 
 export function disposePropOrCustomRig(rig: PropOrCustomRig): void {
+  rig.onDispose?.();
+  if (rig.mixer) {
+    rig.mixer.stopAllAction();
+  }
   const mat = rig.speechSprite.material as THREE.SpriteMaterial;
   if (mat.map) mat.map.dispose();
   rig.root.traverse((obj) => {

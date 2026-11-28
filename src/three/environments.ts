@@ -1240,7 +1240,8 @@ export function applyLightingMode(
   keyLight: THREE.DirectionalLight,
   rimLight: THREE.DirectionalLight,
   envHandle: EnvironmentHandle,
-  mode: LightingMode
+  mode: LightingMode,
+  preserveBackground = false
 ): void {
   // Completely eliminate pale/white distance fog so colors remain vibrant and studio-crisp
   scene.fog = null;
@@ -1255,7 +1256,7 @@ export function applyLightingMode(
     rimLight.color.setHex(0x93c5fd);
     rimLight.intensity = 1.0;
     rimLight.position.set(-7, 8, -10);
-    scene.background = new THREE.Color(envHandle.bgColor);
+    if (!preserveBackground) scene.background = new THREE.Color(envHandle.bgColor);
   } else if (mode === 'sunset') {
     hemiLight.color.setHex(0xfdba74);
     hemiLight.groundColor.setHex(0x4c1d95);
@@ -1266,7 +1267,7 @@ export function applyLightingMode(
     rimLight.color.setHex(0xf472b6);
     rimLight.intensity = 1.0;
     rimLight.position.set(8, 7, -10);
-    scene.background = new THREE.Color(0x431407);
+    if (!preserveBackground) scene.background = new THREE.Color(0x431407);
   } else {
     // night
     hemiLight.color.setHex(0x38bdf8);
@@ -1278,7 +1279,7 @@ export function applyLightingMode(
     rimLight.color.setHex(0x6366f1);
     rimLight.intensity = 0.95;
     rimLight.position.set(7, 7, -10);
-    scene.background = new THREE.Color(0x060913);
+    if (!preserveBackground) scene.background = new THREE.Color(0x060913);
   }
 }
 

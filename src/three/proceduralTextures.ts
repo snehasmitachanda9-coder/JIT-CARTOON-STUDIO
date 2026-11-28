@@ -1425,3 +1425,101 @@ export function createRobotMetalPBRSet(
   return set;
 }
 
+const animalCoatCache = new Map<string, THREE.CanvasTexture>();
+
+export function createAnimalCoatTexture(
+  kind: string,
+  maxAnisotropy = 4
+): THREE.CanvasTexture {
+  const key = kind.toLowerCase();
+  const cached = animalCoatCache.get(key);
+  if (cached) return cached;
+
+  const size = 512;
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d')!;
+
+  // Base neutral high-value coat so Three.js material.color tints cleanly
+  ctx.fillStyle = '#fcfcfc';
+  ctx.fillRect(0, 0, size, size);
+
+  if (key === 'tiger') {
+    // Organic curved dark tiger stripes mapped cleanly across body/head
+    ctx.fillStyle = '#18181b';
+    const stripePositions = [64, 148, 236, 326, 418];
+    stripePositions.forEach((sx, idx) => {
+      const h = idx % 2 === 0 ? 190 : 155;
+      ctx.beginPath();
+      ctx.moveTo(sx - 12, 40);
+      ctx.quadraticCurveTo(sx + 18, 40 + h * 0.48, sx - 6, 40 + h);
+      ctx.lineTo(sx + 18, 40 + h);
+      ctx.quadraticCurveTo(sx + 38, 40 + h * 0.48, sx + 14, 40);
+      ctx.closePath();
+      ctx.fill();
+
+      ctx.beginPath();
+      ctx.moveTo(sx - 10, size - 40);
+      ctx.quadraticCurveTo(sx + 14, size - 40 - h * 0.48, sx - 4, size - 40 - h);
+      ctx.lineTo(sx + 16, size - 40 - h);
+      ctx.quadraticCurveTo(sx + 36, size - 40 - h * 0.48, sx + 12, size - 40);
+      ctx.closePath();
+      ctx.fill();
+    });
+  } else if (key === 'cat') {
+    // Soft tabby markings & fur brush texture
+    ctx.strokeStyle = 'rgba(71, 55, 42, 0.28)';
+    ctx.lineCap = 'round';
+    for (let x = 36; x < size; x += 68) {
+      ctx.lineWidth = 10;
+      ctx.beginPath();
+      ctx.moveTo(x, 30);
+      ctx.quadraticCurveTo(x + 14, size * 0.28, x - 6, size * 0.5);
+      ctx.stroke();
+    }
+  } else if (key === 'fish') {
+    // Tropical clownfish white bands with crisp dark rims (luminance keeps swatch tint vibrant)
+    const drawBand = (cx: number, width: number) => {
+      ctx.fillStyle = '#111827';
+      ctx.fillRect(cx - width * 0.5 - 7, 0, width + 14, size);
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(cx - width * 0.5, 0, width, size);
+    };
+    drawBand(135, 38);
+    drawBand(285, 44);
+    drawBand(420, 28);
+  } else if (key === 'bird') {
+    // Layered stylized cartoon feather scallops
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.36)';
+    ctx.lineWidth = 4;
+    for (let row = 0; row < 12; row++) {
+      const y = row * 44;
+      const off = (row % 2) * 26;
+      for (let col = -1; col < 11; col++) {
+        ctx.beginPath();
+        ctx.arc(col * 52 + off, y, 24, 0.1 * Math.PI, 0.9 * Math.PI);
+        ctx.stroke();
+      }
+    }
+  } else {
+    // Subtle plush fur micro-tufts for Dog, Rabbit, Lion, Elephant, Horse, Monkey
+    for (let i = 0; i < 900; i++) {
+      const x = (Math.sin(i * 12.9898) * 0.5 + 0.5) * size;
+      const y = (Math.cos(i * 78.233) * 0.5 + 0.5) * size;
+      ctx.strokeStyle = i % 2 === 0 ? 'rgba(255,255,255,0.28)' : 'rgba(180,175,165,0.16)';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(x, y);
+      ctx.lineTo(x + 3, y + 7);
+      ctx.stroke();
+    }
+  }
+
+  const tex = configureColorTexture(canvas, 1, 1, maxAnisotropy);
+  tex.userData.sharedResource = true;
+  animalCoatCache.set(key, tex);
+  return tex;
+}
+
+

@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import {
   CustomModelBlueprint,
   CustomModelPart,
@@ -268,11 +269,11 @@ function createBlueprintHandheldGroup(bp: CustomModelBlueprint): THREE.Group {
 export function createImageCutoutTexture(
   imageDataUrl: string,
   removeWhiteBg: boolean,
-  onReady: (tex: THREE.CanvasTexture, aspect: number) => void
+  onReady: (tex: THREE.CanvasTexture, aspect: number) => void,
+  maxDim = 256
 ): void {
   const img = new Image();
   img.onload = () => {
-    const maxDim = 256;
     const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
     const w = Math.max(32, Math.round(img.width * scale));
     const h = Math.max(32, Math.round(img.height * scale));
@@ -340,6 +341,49 @@ export function buildHandheldAttachmentObject(
         plane.scale.set(aspect >= 1 ? 1 : aspect, aspect >= 1 ? 1 / aspect : 1, 1);
       }
     );
+  } else if (attachment.itemKind === 'customGLB' && attachment.glbUrl) {
+    const holder = new THREE.Group();
+    wrapper.add(holder);
+    let cancelled = false;
+    wrapper.userData.onDispose = () => {
+      cancelled = true;
+    };
+
+    const loader = new GLTFLoader();
+    loader
+      .loadAsync(attachment.glbUrl)
+      .then((gltf) => {
+        if (cancelled) {
+          disposeObjectTree(gltf.scene);
+          return;
+        }
+        const model = gltf.scene;
+        const box = new THREE.Box3().setFromObject(model);
+        const size = new THREE.Vector3();
+        const center = new THREE.Vector3();
+        box.getSize(size);
+        box.getCenter(center);
+        const maxDim = Math.max(size.x, size.y, size.z, 0.01);
+        const scale = 0.36 / maxDim;
+        model.scale.setScalar(scale);
+        model.position.set(
+          -center.x * scale,
+          -center.y * scale + 0.02,
+          -center.z * scale + 0.1
+        );
+        enableShadows(model);
+        holder.add(model);
+      })
+      .catch(() => {
+        // Fallback small emblem if invalid GLB
+        if (cancelled) return;
+        const fallback = new THREE.Mesh(
+          new THREE.OctahedronGeometry(0.12, 0),
+          new THREE.MeshStandardMaterial({ color: 0xf59e0b, roughness: 0.35 })
+        );
+        fallback.position.set(0, 0.02, 0.12);
+        holder.add(fallback);
+      });
   } else if (attachment.itemKind !== 'none') {
     wrapper.add(createBuiltinHandheldGroup(attachment.itemKind));
   }
@@ -358,6 +402,9 @@ export function applyHandheldTransform(
 }
 
 export function disposeObjectTree(obj: THREE.Object3D): void {
+  if (typeof obj.userData?.onDispose === 'function') {
+    obj.userData.onDispose();
+  }
   obj.traverse((child) => {
     if ((child as THREE.Mesh).isMesh) {
       const m = child as THREE.Mesh;

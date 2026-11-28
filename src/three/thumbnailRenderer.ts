@@ -263,7 +263,13 @@ async function renderSingleSpec(spec: ThumbnailSpec): Promise<string | null> {
     } else if (spec.actorType === 'custom' && spec.customBlueprint) {
       const rig = createCustomModelRig(spec.customBlueprint);
       rig.selectionRing.visible = false;
-      updatePropOrCustomAnimation(rig, 'Idle', 0.25, 0.016, 0, false);
+      if (rig.readyPromise) {
+        await Promise.race([
+          rig.readyPromise,
+          new Promise<void>((resolve) => setTimeout(resolve, 1500)),
+        ]);
+      }
+      updatePropOrCustomAnimation(rig, 'Idle', 0.25, 0.05, 0, false);
       container.add(rig.root);
       propRigs.push(rig);
     } else {
@@ -274,6 +280,8 @@ async function renderSingleSpec(spec: ThumbnailSpec): Promise<string | null> {
       spec.actorType === 'character' ||
       (spec.actorType === 'custom' &&
         Boolean(spec.customBlueprint) &&
+        spec.customBlueprint?.assetType !== 'cutout' &&
+        spec.customBlueprint?.assetType !== 'glb' &&
         inferStyleFromBlueprint(spec.customBlueprint!).entityType === 'humanoid');
 
     return frameAndRender(ctx, container, isPortraitHumanoid);

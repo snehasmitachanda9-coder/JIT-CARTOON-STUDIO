@@ -15,6 +15,7 @@ import {
   CameraPose,
   CameraZoomMode,
   CharacterKind,
+  CustomBackgroundConfig,
   ENVIRONMENT_META,
   EnvironmentId,
   LightingMode,
@@ -123,6 +124,7 @@ type UnifiedRigEntry = (
 interface StudioViewportProps {
   environment: EnvironmentId;
   lighting: LightingMode;
+  customBackground?: CustomBackgroundConfig | null;
   actors: SceneActor[];
   selectedActorId: string | null;
   aspectRatio: AspectRatioMode;
@@ -154,6 +156,7 @@ export const StudioViewport = forwardRef<StudioViewportHandle, StudioViewportPro
     {
       environment,
       lighting,
+      customBackground = null,
       actors,
       selectedActorId,
       aspectRatio,
@@ -247,6 +250,12 @@ export const StudioViewport = forwardRef<StudioViewportHandle, StudioViewportPro
       rimLight: THREE.DirectionalLight;
       envHandle: EnvironmentHandle | null;
       currentEnvId: EnvironmentId | null;
+      customGroundMesh: THREE.Mesh;
+      bgMedia: {
+        key: string;
+        tex: THREE.Texture | null;
+        video: HTMLVideoElement | null;
+      };
       rigs: Map<string, UnifiedRigEntry>;
       motionPathViz: MotionPathVisualizer;
       camTransitionActive: boolean;
@@ -458,6 +467,22 @@ export const StudioViewport = forwardRef<StudioViewportHandle, StudioViewportPro
       const motionPathViz = new MotionPathVisualizer();
       scene.add(motionPathViz.group);
 
+      // Clean ground floor disc shown only when a custom background has "Show 3D Ground" enabled
+      const customGroundGeo = new THREE.CircleGeometry(16, 48);
+      customGroundGeo.rotateX(-Math.PI / 2);
+      const customGroundMat = new THREE.MeshStandardMaterial({
+        color: 0x334155,
+        roughness: 0.88,
+        metalness: 0.04,
+        transparent: true,
+        opacity: 0.58,
+      });
+      const customGroundMesh = new THREE.Mesh(customGroundGeo, customGroundMat);
+      customGroundMesh.receiveShadow = true;
+      customGroundMesh.visible = false;
+      customGroundMesh.position.y = -0.005;
+      scene.add(customGroundMesh);
+
       const maxAnisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy() || 4);
       const rigs = new Map<string, UnifiedRigEntry>();
 
@@ -471,6 +496,8 @@ export const StudioViewport = forwardRef<StudioViewportHandle, StudioViewportPro
         rimLight,
         envHandle: null,
         currentEnvId: null,
+        customGroundMesh,
+        bgMedia: { key: '', tex: null, video: null },
         rigs,
         motionPathViz,
         camTransitionActive: false,
@@ -1161,6 +1188,17 @@ export const StudioViewport = forwardRef<StudioViewportHandle, StudioViewportPro
           scene.remove(threeRef.current.envHandle.group);
           disposeEnvironment(threeRef.current.envHandle);
         }
+        if (threeRef.current?.bgMedia) {
+          if (threeRef.current.bgMedia.video) {
+            threeRef.current.bgMedia.video.pause();
+            threeRef.current.bgMedia.video.removeAttribute('src');
+            threeRef.current.bgMedia.video.load();
+          }
+          threeRef.current.bgMedia.tex?.dispose();
+        }
+        scene.remove(customGroundMesh);
+        customGroundGeo.dispose();
+        customGroundMat.dispose();
         rigs.forEach((entry) => {
           entry.transitionCtrl.restoreMaterials();
           scene.remove(entry.rig.root);
@@ -1178,7 +1216,7 @@ export const StudioViewport = forwardRef<StudioViewportHandle, StudioViewportPro
       };
     }, []);
 
-    // 2. Sync Environment & Lighting Mode
+    // 2. Sync Environment, Lighting Mode & Custom Image/Video Background
     useEffect(() => {
       const inst = threeRef.current;
       if (!inst) return;
@@ -1194,17 +1232,95 @@ export const StudioViewport = forwardRef<StudioViewportHandle, StudioViewportPro
         inst.currentEnvId = environment;
       }
 
+      const clearBgMedia = () => {
+        if (inst.bgMedia.video) {
+          inst.bgMedia.video.pause();
+          inst.bgMedia.video.removeAttribute('src');
+          inst.bgMedia.video.load();
+          inst.bgMedia.video = null;
+        }
+        if (inst.bgMedia.tex) {
+          inst.bgMedia.tex.dispose();
+          inst.bgMedia.tex = null;
+        }
+        inst.bgMedia.key = '';
+      };
+
+      const hasCustomBg = Boolean(customBackground?.url);
       if (inst.envHandle) {
+        inst.envHandle.group.visible = !hasCustomBg;
         applyLightingMode(
           inst.scene,
           inst.hemiLight,
           inst.keyLight,
           inst.rimLight,
           inst.envHandle,
-          lighting
+          lighting,
+          hasCustomBg
         );
       }
-    }, [environment, lighting]);
+
+      inst.customGroundMesh.visible = Boolean(hasCustomBg && customBackground?.showGround);
+
+      if (!customBackground?.url) {
+        if (inst.bgMedia.key) {
+          clearBgMedia();
+          if (inst.envHandle) {
+            applyLightingMode(
+              inst.scene,
+              inst.hemiLight,
+              inst.keyLight,
+              inst.rimLight,
+              inst.envHandle,
+              lighting,
+              false
+            );
+          }
+        }
+        return;
+      }
+
+      const nextKey = `${customBackground.mediaType}|${customBackground.url}`;
+      if (inst.bgMedia.key === nextKey) {
+        if (inst.bgMedia.tex) {
+          inst.scene.background = inst.bgMedia.tex;
+        }
+        return;
+      }
+
+      clearBgMedia();
+      inst.bgMedia.key = nextKey;
+
+      if (customBackground.mediaType === 'video') {
+        const video = document.createElement('video');
+        video.src = customBackground.url;
+        video.loop = true;
+        video.muted = true;
+        video.playsInline = true;
+        video.crossOrigin = 'anonymous';
+        void video.play().catch(() => {});
+
+        const videoTex = new THREE.VideoTexture(video);
+        videoTex.colorSpace = THREE.SRGBColorSpace;
+        videoTex.minFilter = THREE.LinearFilter;
+        videoTex.magFilter = THREE.LinearFilter;
+
+        inst.bgMedia.video = video;
+        inst.bgMedia.tex = videoTex;
+        inst.scene.background = videoTex;
+      } else {
+        const loader = new THREE.TextureLoader();
+        loader.load(customBackground.url, (tex) => {
+          if (threeRef.current?.bgMedia.key !== nextKey) {
+            tex.dispose();
+            return;
+          }
+          tex.colorSpace = THREE.SRGBColorSpace;
+          inst.bgMedia.tex = tex;
+          inst.scene.background = tex;
+        });
+      }
+    }, [environment, lighting, customBackground]);
 
     // 3. Sync Camera Pose Transitions
     useEffect(() => {

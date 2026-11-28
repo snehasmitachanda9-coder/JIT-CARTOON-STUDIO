@@ -41,6 +41,7 @@ import {
   CHARACTER_META,
   CharacterKind,
   CUSTOM_MODEL_RETENTION_MS,
+  CustomBackgroundConfig,
   CustomModelBlueprint,
   ENTRANCE_EFFECT_META,
   EntranceEffect,
@@ -149,6 +150,17 @@ interface InspectorPanelProps {
     language: 'English' | 'Bengali' | 'Bilingual'
   ) => Promise<GeneratedStoryScript | null>;
   onLoadStoryScript: (script: GeneratedStoryScript) => void;
+  onUploadCustomAsset: (
+    file: File,
+    opts: { category: 'character' | 'prop'; removeBg: boolean }
+  ) => Promise<void>;
+  onUploadHandheldGLB: (
+    actorId: string,
+    hand: 'left' | 'right',
+    file: File
+  ) => void;
+  onChangeCustomBackground: (bg: CustomBackgroundConfig | null) => void;
+  onToggleCustomGround: (show: boolean) => void;
 }
 
 const ENV_IDS: EnvironmentId[] = [
@@ -274,9 +286,20 @@ export function InspectorPanel({
   onGenerateHandheldAIProp,
   onGenerateAIStory,
   onLoadStoryScript,
+  onUploadCustomAsset,
+  onUploadHandheldGLB,
+  onChangeCustomBackground,
+  onToggleCustomGround,
 }: InspectorPanelProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const handImageInputRef = useRef<HTMLInputElement>(null);
+  const handGlbInputRef = useRef<HTMLInputElement>(null);
+  const libraryUploadInputRef = useRef<HTMLInputElement>(null);
+  const sceneBgInputRef = useRef<HTMLInputElement>(null);
+
+  const [uploadAsCategory, setUploadAsCategory] = useState<'character' | 'prop'>('character');
+  const [uploadRemoveBg, setUploadRemoveBg] = useState(true);
+  const [isUploadingAsset, setIsUploadingAsset] = useState(false);
 
   const selectedActor =
     activeScene.actors.find((a) => a.id === selectedActorId) || null;
@@ -1411,7 +1434,7 @@ export function InspectorPanel({
                     })}
                   </div>
 
-                  {/* Custom Image Upload */}
+                  {/* Custom Image & .GLB 3D Prop Upload */}
                   <div className="space-y-1.5 pt-1 border-t border-white/8">
                     <input
                       ref={handImageInputRef}
@@ -1424,34 +1447,53 @@ export function InspectorPanel({
                         e.target.value = '';
                       }}
                     />
-                    <div className="flex items-center justify-between gap-2">
+                    <input
+                      ref={handGlbInputRef}
+                      type="file"
+                      accept=".glb,.gltf,model/gltf-binary,model/gltf+json"
+                      className="hidden"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) onUploadHandheldGLB(selectedActor.id, activeHand, file);
+                        e.target.value = '';
+                      }}
+                    />
+                    <div className="grid grid-cols-2 gap-1.5">
                       <button
                         type="button"
                         onClick={() => handImageInputRef.current?.click()}
-                        className="flex-1 py-1.5 px-2 rounded-lg bg-[#1D2538] hover:bg-[#242E45] border border-white/10 text-[11px] font-medium text-sky-300 flex items-center justify-center gap-1.5 cursor-pointer"
+                        className="py-1.5 px-2 rounded-lg bg-[#1D2538] hover:bg-[#242E45] border border-white/10 text-[11px] font-medium text-sky-300 flex items-center justify-center gap-1 cursor-pointer"
                       >
-                        <ImageIcon className="w-3.5 h-3.5" />
-                        <span>Upload Prop Image</span>
+                        <ImageIcon className="w-3.5 h-3.5 shrink-0" />
+                        <span className="truncate">Prop Image</span>
                       </button>
-                      <label className="flex items-center gap-1 text-[10px] text-slate-300 cursor-pointer select-none">
-                        <input
-                          type="checkbox"
-                          checked={removeImgBg}
-                          onChange={(e) => {
-                            const checked = e.target.checked;
-                            setRemoveImgBg(checked);
-                            if (heldItem?.itemKind === 'customImage') {
-                              setActorHeldItem(selectedActor, activeHand, {
-                                ...heldItem,
-                                removeBg: checked,
-                              });
-                            }
-                          }}
-                          className="accent-amber-500"
-                        />
-                        <span>Cutout BG</span>
-                      </label>
+                      <button
+                        type="button"
+                        onClick={() => handGlbInputRef.current?.click()}
+                        className="py-1.5 px-2 rounded-lg bg-[#1D2538] hover:bg-[#242E45] border border-white/10 text-[11px] font-medium text-amber-300 flex items-center justify-center gap-1 cursor-pointer"
+                      >
+                        <Box className="w-3.5 h-3.5 shrink-0" />
+                        <span className="truncate">.GLB 3D Prop</span>
+                      </button>
                     </div>
+                    <label className="flex items-center gap-1.5 text-[10px] text-slate-300 cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        checked={removeImgBg}
+                        onChange={(e) => {
+                          const checked = e.target.checked;
+                          setRemoveImgBg(checked);
+                          if (heldItem?.itemKind === 'customImage') {
+                            setActorHeldItem(selectedActor, activeHand, {
+                              ...heldItem,
+                              removeBg: checked,
+                            });
+                          }
+                        }}
+                        className="accent-amber-500"
+                      />
+                      <span>Remove White BG on Image Prop</span>
+                    </label>
                   </div>
 
                   {/* AI Prop in Hand */}
@@ -1591,8 +1633,131 @@ export function InspectorPanel({
       }
 
       // Built-In 3D Library & On Stage Cast Picker View
+      const uploadedModels = customModels.filter((m) => m.source === 'upload');
+
       return (
         <div className="space-y-4">
+          {/* Upload Custom Character Cutout / Prop Image / .GLB 3D Model */}
+          <section className="p-2.5 rounded-xl bg-[#161D2E] border border-sky-500/35 space-y-2">
+            <input
+              ref={libraryUploadInputRef}
+              type="file"
+              accept="image/png,image/jpeg,image/webp,.glb,.gltf,model/gltf-binary,model/gltf+json"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                e.target.value = '';
+                if (!file) return;
+                setIsUploadingAsset(true);
+                void onUploadCustomAsset(file, {
+                  category: uploadAsCategory,
+                  removeBg: uploadRemoveBg,
+                }).finally(() => setIsUploadingAsset(false));
+              }}
+            />
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-xs font-semibold text-sky-300 flex items-center gap-1.5">
+                <Upload className="w-3.5 h-3.5 text-sky-400" />
+                <span>+ Upload Custom</span>
+              </span>
+              <div className="flex items-center bg-[#0B0E14] rounded-md p-0.5 border border-white/10">
+                {(['character', 'prop'] as const).map((cat) => (
+                  <button
+                    key={cat}
+                    type="button"
+                    onClick={() => setUploadAsCategory(cat)}
+                    className={`px-2 py-0.5 rounded text-[10px] font-medium capitalize cursor-pointer ${
+                      uploadAsCategory === cat
+                        ? 'bg-sky-500 text-slate-950 font-semibold'
+                        : 'text-slate-300'
+                    }`}
+                  >
+                    {cat}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <button
+              type="button"
+              disabled={isUploadingAsset}
+              onClick={() => libraryUploadInputRef.current?.click()}
+              className="w-full py-2 px-3 rounded-lg bg-sky-500 hover:bg-sky-400 disabled:opacity-50 text-slate-950 text-xs font-semibold flex items-center justify-center gap-1.5 cursor-pointer transition-colors"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>
+                {isUploadingAsset ? 'Importing Asset...' : 'Upload Image / 3D Model (.GLB)'}
+              </span>
+            </button>
+            <div className="flex items-center justify-between gap-2">
+              <label className="flex items-center gap-1.5 text-[10px] text-slate-300 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={uploadRemoveBg}
+                  onChange={(e) => setUploadRemoveBg(e.target.checked)}
+                  className="accent-sky-400"
+                />
+                <span>Auto-remove white BG (PNG/JPG cutout)</span>
+              </label>
+            </div>
+
+            {uploadedModels.length > 0 && (
+              <div className="pt-1.5 border-t border-white/8 space-y-1">
+                <div className="text-[10px] font-medium text-slate-400">
+                  Uploaded Assets ({uploadedModels.length})
+                </div>
+                <div className="grid grid-cols-2 gap-1.5 max-h-36 overflow-y-auto studio-scroll pr-0.5">
+                  {uploadedModels.map((bp) => {
+                    const thumbKey = getThumbnailKey('custom', bp.id, bp.id);
+                    const thumbUrl = thumbMap[thumbKey];
+                    return (
+                      <div
+                        key={bp.id}
+                        className="p-1.5 rounded-lg bg-[#111622] border border-white/10 flex items-center gap-1.5"
+                      >
+                        <button
+                          type="button"
+                          onClick={() =>
+                            onOpenLibraryPicker('custom', bp.id, bp.name, bp)
+                          }
+                          className="flex items-center gap-1.5 min-w-0 flex-1 text-left cursor-pointer"
+                        >
+                          <div className="w-8 h-8 rounded bg-[#1B2336] shrink-0 overflow-hidden flex items-center justify-center">
+                            {thumbUrl ? (
+                              <img
+                                src={thumbUrl}
+                                alt={bp.name}
+                                className="w-full h-full object-contain"
+                                draggable={false}
+                              />
+                            ) : (
+                              <Box className="w-4 h-4 text-slate-500" />
+                            )}
+                          </div>
+                          <div className="min-w-0">
+                            <div className="text-[10px] font-semibold text-slate-100 truncate">
+                              {bp.name}
+                            </div>
+                            <div className="text-[9px] text-sky-300 uppercase">
+                              {bp.assetType || '3D'}
+                            </div>
+                          </div>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => onDeleteCustomModel(bp.id)}
+                          title="Delete uploaded asset"
+                          className="p-1 rounded hover:bg-rose-500/20 text-slate-400 hover:text-rose-300 cursor-pointer shrink-0"
+                        >
+                          <Trash2 className="w-3 h-3" />
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </section>
+
           {/* Cast on Stage (Quick Tap to Open Model Controls) */}
           <section className="space-y-2">
             <div className="flex items-center justify-between gap-2">
@@ -1729,16 +1894,103 @@ export function InspectorPanel({
     }
 
     if (activeTab === 'scene') {
+      const customBg = activeScene.customBackground;
+
+      const handleSceneBgUpload = (file: File) => {
+        const isVideo =
+          file.type.startsWith('video/') || /\.(mp4|webm|mov)$/i.test(file.name);
+        if (isVideo) {
+          const url = URL.createObjectURL(file);
+          onChangeCustomBackground({
+            url,
+            name: file.name,
+            mediaType: 'video',
+            showGround: customBg?.showGround ?? true,
+          });
+        } else {
+          const reader = new FileReader();
+          reader.onload = () => {
+            const dataUrl = typeof reader.result === 'string' ? reader.result : '';
+            if (!dataUrl) return;
+            onChangeCustomBackground({
+              url: dataUrl,
+              name: file.name,
+              mediaType: 'image',
+              showGround: customBg?.showGround ?? true,
+            });
+          };
+          reader.readAsDataURL(file);
+        }
+      };
+
       return (
         <div className="space-y-5">
+          {/* Custom Background Photo/Video Upload */}
+          <section className="p-2.5 rounded-xl bg-[#161D2E] border border-sky-500/35 space-y-2.5">
+            <input
+              ref={sceneBgInputRef}
+              type="file"
+              accept="image/png,image/jpeg,image/webp,video/mp4,video/webm"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) handleSceneBgUpload(file);
+                e.target.value = '';
+              }}
+            />
+            <div className="flex items-center justify-between">
+              <h2 className="text-xs font-semibold text-sky-300 flex items-center gap-1.5">
+                <ImageIcon className="w-3.5 h-3.5 text-sky-400" />
+                <span>Custom Background</span>
+              </h2>
+              {customBg && (
+                <button
+                  type="button"
+                  onClick={() => onChangeCustomBackground(null)}
+                  className="text-[10px] font-medium text-rose-300 hover:text-rose-200 cursor-pointer"
+                >
+                  Clear
+                </button>
+              )}
+            </div>
+            <button
+              type="button"
+              onClick={() => sceneBgInputRef.current?.click()}
+              className="w-full py-2 px-3 rounded-lg bg-sky-500 hover:bg-sky-400 text-slate-950 text-xs font-semibold flex items-center justify-center gap-1.5 cursor-pointer transition-colors"
+            >
+              <Upload className="w-3.5 h-3.5" />
+              <span>Upload Custom Background (Image / Video)</span>
+            </button>
+            {customBg && (
+              <div className="space-y-2 pt-1 border-t border-white/10">
+                <div className="text-[11px] text-sky-100 truncate">
+                  Active ({customBg.mediaType}): {customBg.name}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => onToggleCustomGround(!customBg.showGround)}
+                  className={`w-full py-1.5 px-2.5 rounded-lg border text-[11px] font-medium cursor-pointer transition-colors ${
+                    customBg.showGround
+                      ? 'bg-emerald-500/20 border-emerald-400 text-emerald-200'
+                      : 'bg-[#0E131F] border-white/15 text-slate-300'
+                  }`}
+                >
+                  {customBg.showGround
+                    ? '3D Ground Floor: Visible (Click to Hide)'
+                    : '3D Ground Floor: Hidden (Click to Show)'}
+                </button>
+              </div>
+            )}
+          </section>
+
           {/* 6 Environments */}
-          <section className="space-y-2">
+          <section className="space-y-2 pt-3 border-t border-white/8">
             <h2 className="text-xs font-semibold text-slate-300">
               Cartoon Environment
             </h2>
             <div className="grid grid-cols-1 gap-1.5">
               {ENV_IDS.map((envId) => {
-                const active = activeScene.environment === envId;
+                const active = activeScene.environment === envId && !customBg;
                 return (
                   <button
                     key={envId}

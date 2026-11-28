@@ -1,17 +1,24 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import {
   Clapperboard,
   Crown,
   GraduationCap,
+  Image as ImageIcon,
   Monitor,
   Plus,
   Smartphone,
   Sparkles,
   Square as SquareIcon,
+  Trash2,
   Trees,
   X,
 } from 'lucide-react';
-import { AspectRatioMode, EnvironmentId, ENVIRONMENT_META } from '../types/studio';
+import {
+  AspectRatioMode,
+  CustomBackgroundConfig,
+  EnvironmentId,
+  ENVIRONMENT_META,
+} from '../types/studio';
 
 export type ProjectTemplateId =
   | 'blank'
@@ -25,6 +32,7 @@ export interface NewProjectConfig {
   aspectRatio: AspectRatioMode;
   templateId: ProjectTemplateId;
   blankEnvironment: EnvironmentId;
+  customBackground?: CustomBackgroundConfig | null;
 }
 
 interface NewProjectModalProps {
@@ -90,14 +98,44 @@ export function NewProjectModal({
   onCreateProject,
   onClose,
 }: NewProjectModalProps) {
+  const bgInputRef = useRef<HTMLInputElement>(null);
   const [projectName, setProjectName] = useState(
     initialProjectName || 'My Cartoon Story'
   );
   const [aspectRatio, setAspectRatio] = useState<AspectRatioMode>(initialAspectRatio);
   const [templateId, setTemplateId] = useState<ProjectTemplateId>('blank');
   const [blankEnvironment, setBlankEnvironment] = useState<EnvironmentId>('village');
+  const [customBackground, setCustomBackground] =
+    useState<CustomBackgroundConfig | null>(null);
 
   if (!open) return null;
+
+  const handleBgFileSelect = (file: File) => {
+    const isVideo =
+      file.type.startsWith('video/') || /\.(mp4|webm|mov)$/i.test(file.name);
+    if (isVideo) {
+      const objectUrl = URL.createObjectURL(file);
+      setCustomBackground({
+        url: objectUrl,
+        name: file.name,
+        mediaType: 'video',
+        showGround: true,
+      });
+    } else {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const dataUrl = typeof reader.result === 'string' ? reader.result : '';
+        if (!dataUrl) return;
+        setCustomBackground({
+          url: dataUrl,
+          name: file.name,
+          mediaType: 'image',
+          showGround: true,
+        });
+      };
+      reader.readAsDataURL(file);
+    }
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -107,6 +145,7 @@ export function NewProjectModal({
       aspectRatio,
       templateId,
       blankEnvironment,
+      customBackground,
     });
   };
 
@@ -328,6 +367,63 @@ export function NewProjectModal({
                   );
                 })}
               </div>
+            </div>
+
+            {/* 4. Optional Custom Photo/Video Background */}
+            <div className="pt-2 border-t border-white/8 space-y-2">
+              <input
+                ref={bgInputRef}
+                type="file"
+                accept="image/png,image/jpeg,image/webp,video/mp4,video/webm"
+                className="hidden"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) handleBgFileSelect(file);
+                  e.target.value = '';
+                }}
+              />
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <button
+                  type="button"
+                  onClick={() => bgInputRef.current?.click()}
+                  className="px-3 py-1.5 rounded-xl bg-[#192338] hover:bg-[#22304D] border border-sky-400/35 text-xs font-medium text-sky-200 flex items-center gap-2 cursor-pointer"
+                >
+                  <ImageIcon className="w-3.5 h-3.5 text-sky-400" />
+                  <span>Upload Custom Background (Image / Video)</span>
+                </button>
+                {customBackground && (
+                  <div className="flex items-center gap-2">
+                    <label className="flex items-center gap-1.5 text-[11px] text-slate-300 cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        checked={customBackground.showGround}
+                        onChange={(e) =>
+                          setCustomBackground((prev) =>
+                            prev ? { ...prev, showGround: e.target.checked } : prev
+                          )
+                        }
+                        className="accent-amber-500"
+                      />
+                      <span>Show 3D Ground</span>
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => setCustomBackground(null)}
+                      className="p-1.5 rounded-lg bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 cursor-pointer"
+                      title="Clear custom background"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                )}
+              </div>
+              {customBackground && (
+                <div className="px-2.5 py-1.5 rounded-lg bg-sky-500/12 border border-sky-400/30 text-[11px] text-sky-200 flex items-center justify-between gap-2">
+                  <span className="truncate">
+                    Backdrop ({customBackground.mediaType}): {customBackground.name}
+                  </span>
+                </div>
+              )}
             </div>
           </div>
         </div>
