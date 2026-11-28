@@ -20,10 +20,13 @@ import {
   InspectorPanel,
   InspectorTab,
 } from './components/InspectorPanel';
+import { NewProjectConfig, NewProjectModal } from './components/NewProjectModal';
 import { ActorTrackField, TimelineBar } from './components/TimelineBar';
 import { TopHeader } from './components/TopHeader';
 import { useOnlineStatus } from './hooks/useOnlineStatus';
 import {
+  LiveEffectPreview,
+  LiveEffectPreviewKind,
   MotionPathEditMode,
   StudioViewport,
   StudioViewportHandle,
@@ -66,7 +69,7 @@ import { generateOfflineProceduralModel } from './utils/offlineModelGenerator';
 const CUSTOM_MODELS_KEY = 'jit_custom_3d_models_v1';
 const LEGACY_CUSTOM_MODELS_KEY = 'jit-3d-custom-models-v1';
 const CHARACTER_ENGINE_VERSION_KEY = 'jit_3d_engine_version';
-const CHARACTER_ENGINE_VERSION = 'gltf_v2';
+const CHARACTER_ENGINE_VERSION = 'chibi_sculptor_v3';
 
 function clearOldCachedSceneStateOnLoad(): void {
   try {
@@ -96,10 +99,228 @@ clearOldCachedSceneStateOnLoad();
 let uidCounter = 100;
 const nextId = (prefix: string) => `${prefix}-${++uidCounter}`;
 
-function createInitialScenes(): SceneData[] {
+function createBlankScenes(env: EnvironmentId = 'village'): SceneData[] {
   return [
     {
-      id: 'scene-1',
+      id: nextId('scene'),
+      title: 'Scene 1',
+      environment: env,
+      lighting: env === 'forest' ? 'night' : 'day',
+      duration: 6,
+      cameraPose: { ...ENVIRONMENT_META[env].defaultCamera },
+      cameraPreset: 'wide',
+      cameraZoom: 'none',
+      audio: null,
+      actors: [],
+    },
+  ];
+}
+
+function createProjectFromConfig(cfg: NewProjectConfig): SceneData[] {
+  if (cfg.templateId === 'blank') {
+    return createBlankScenes(cfg.blankEnvironment);
+  }
+
+  if (cfg.templateId === 'classroom') {
+    return [
+      {
+        id: nextId('scene'),
+        title: 'Scene 1',
+        environment: 'classroom',
+        lighting: 'day',
+        duration: 6,
+        cameraPose: { ...ENVIRONMENT_META.classroom.defaultCamera },
+        cameraPreset: 'wide',
+        cameraZoom: 'zoomIn',
+        audio: null,
+        actors: [
+          {
+            id: nextId('actor'),
+            actorType: 'character',
+            kind: 'teacher',
+            name: 'Teacher 1',
+            position: [-1.2, -1.5],
+            rotationY: 0.25,
+            scale: 1,
+            animation: 'Talk (Lip-Sync)',
+            expression: 'Happy',
+            dialogue: 'Welcome to class! Let us learn together!',
+            accentColor: CHARACTER_META.teacher.defaultColor,
+            heldItemRight: {
+              itemKind: 'book',
+              label: 'Book',
+              scale: 1,
+              rotationDeg: 0,
+              offsetY: 0,
+              offsetZ: 0,
+            },
+            audio: null,
+          },
+          {
+            id: nextId('actor'),
+            actorType: 'character',
+            kind: 'robot',
+            name: 'Robot 1',
+            position: [1.3, -0.8],
+            rotationY: -0.35,
+            scale: 1,
+            animation: 'Dance',
+            expression: 'Happy',
+            dialogue: 'Beep boop! Ready to learn!',
+            accentColor: CHARACTER_META.robot.defaultColor,
+            audio: null,
+          },
+        ],
+      },
+    ];
+  }
+
+  if (cfg.templateId === 'jungle') {
+    return [
+      {
+        id: nextId('scene'),
+        title: 'Scene 1',
+        environment: 'forest',
+        lighting: 'day',
+        duration: 6,
+        cameraPose: { ...ENVIRONMENT_META.forest.defaultCamera },
+        cameraPreset: 'wide',
+        cameraZoom: 'none',
+        audio: null,
+        actors: [
+          {
+            id: nextId('actor'),
+            actorType: 'animal',
+            kind: 'monkey',
+            name: 'Monkey 1',
+            position: [-1.5, 0.2],
+            rotationY: 0.35,
+            scale: 1,
+            animation: 'Jump/Hop',
+            expression: 'Happy',
+            dialogue: 'Ooh ooh! Rainbow Jungle adventure!',
+            accentColor: ANIMAL_META.monkey.defaultColor,
+            audio: null,
+          },
+          {
+            id: nextId('actor'),
+            actorType: 'animal',
+            kind: 'elephant',
+            name: 'Elephant 1',
+            position: [1.3, -0.3],
+            rotationY: -0.3,
+            scale: 1.05,
+            animation: 'Walk',
+            expression: 'Happy',
+            dialogue: 'Let us explore the forest!',
+            accentColor: ANIMAL_META.elephant.defaultColor,
+            audio: null,
+          },
+          {
+            id: nextId('actor'),
+            actorType: 'animal',
+            kind: 'bird',
+            name: 'Bird 1',
+            position: [0.0, 1.3],
+            rotationY: 0,
+            scale: 1,
+            animation: 'Fly',
+            expression: 'Happy',
+            dialogue: 'Tweet tweet!',
+            accentColor: ANIMAL_META.bird.defaultColor,
+            audio: null,
+          },
+        ],
+      },
+    ];
+  }
+
+  if (cfg.templateId === 'palace') {
+    return [
+      {
+        id: nextId('scene'),
+        title: 'Scene 1',
+        environment: 'palace',
+        lighting: 'day',
+        duration: 6,
+        cameraPose: { ...ENVIRONMENT_META.palace.defaultCamera },
+        cameraPreset: 'wide',
+        cameraZoom: 'none',
+        audio: null,
+        actors: [
+          {
+            id: nextId('actor'),
+            actorType: 'character',
+            kind: 'king',
+            name: 'King 1',
+            position: [-1.8, -0.4],
+            rotationY: 0.3,
+            scale: 1,
+            animation: 'Waving Hand (হাত নাড়ানো)',
+            expression: 'Happy',
+            dialogue: 'Welcome to the Royal Palace!',
+            accentColor: CHARACTER_META.king.defaultColor,
+            audio: null,
+          },
+          {
+            id: nextId('actor'),
+            actorType: 'character',
+            kind: 'queen',
+            name: 'Queen 1',
+            position: [-0.5, -0.7],
+            rotationY: 0.15,
+            scale: 1,
+            animation: 'Talk (Lip-Sync)',
+            expression: 'Happy',
+            dialogue: 'Today is a grand royal celebration!',
+            accentColor: CHARACTER_META.queen.defaultColor,
+            audio: null,
+          },
+          {
+            id: nextId('actor'),
+            actorType: 'character',
+            kind: 'princess',
+            name: 'Princess 1',
+            position: [0.9, -0.2],
+            rotationY: -0.2,
+            scale: 1,
+            animation: 'Dance',
+            expression: 'Happy',
+            dialogue: 'Hooray!',
+            accentColor: CHARACTER_META.princess.defaultColor,
+            audio: null,
+          },
+          {
+            id: nextId('actor'),
+            actorType: 'character',
+            kind: 'fairy',
+            name: 'Fairy 1',
+            position: [2.1, 0.7],
+            rotationY: -0.45,
+            scale: 0.96,
+            animation: 'Magic Spell Cast',
+            expression: 'Happy',
+            dialogue: 'Sparkle magic!',
+            accentColor: CHARACTER_META.fairy.defaultColor,
+            heldItemRight: {
+              itemKind: 'magicWand',
+              label: 'Magic Wand',
+              scale: 1,
+              rotationDeg: 0,
+              offsetY: 0,
+              offsetZ: 0,
+            },
+            audio: null,
+          },
+        ],
+      },
+    ];
+  }
+
+  // Default starter template: Green Village
+  return [
+    {
+      id: nextId('scene'),
       title: 'Scene 1',
       environment: 'village',
       lighting: 'day',
@@ -110,7 +331,7 @@ function createInitialScenes(): SceneData[] {
       audio: null,
       actors: [
         {
-          id: 'actor-1',
+          id: nextId('actor'),
           actorType: 'character',
           kind: 'boy',
           name: 'Boy 1',
@@ -124,7 +345,7 @@ function createInitialScenes(): SceneData[] {
           audio: null,
         },
         {
-          id: 'actor-2',
+          id: nextId('actor'),
           actorType: 'character',
           kind: 'girl',
           name: 'Girl 1',
@@ -138,7 +359,7 @@ function createInitialScenes(): SceneData[] {
           audio: null,
         },
         {
-          id: 'actor-3',
+          id: nextId('actor'),
           actorType: 'animal',
           kind: 'dog',
           name: 'Dog 1',
@@ -149,55 +370,6 @@ function createInitialScenes(): SceneData[] {
           expression: 'Happy',
           dialogue: 'Woof!',
           accentColor: ANIMAL_META.dog.defaultColor,
-          audio: null,
-        },
-      ],
-    },
-    {
-      id: 'scene-2',
-      title: 'Scene 2',
-      environment: 'classroom',
-      lighting: 'day',
-      duration: 6,
-      cameraPose: { ...ENVIRONMENT_META.classroom.defaultCamera },
-      cameraPreset: 'wide',
-      cameraZoom: 'zoomIn',
-      audio: null,
-      actors: [
-        {
-          id: 'actor-4',
-          actorType: 'character',
-          kind: 'teacher',
-          name: 'Teacher 1',
-          position: [-1.2, -1.6],
-          rotationY: 0.25,
-          scale: 1,
-          animation: 'Talk (Lip-Sync)',
-          expression: 'Happy',
-          dialogue: 'Today we learn 3D storytelling!',
-          accentColor: CHARACTER_META.teacher.defaultColor,
-          heldItemRight: {
-            itemKind: 'book',
-            label: 'Book',
-            scale: 1,
-            rotationDeg: 0,
-            offsetY: 0,
-            offsetZ: 0,
-          },
-          audio: null,
-        },
-        {
-          id: 'actor-5',
-          actorType: 'character',
-          kind: 'robot',
-          name: 'Robot 1',
-          position: [1.3, -0.8],
-          rotationY: -0.35,
-          scale: 1,
-          animation: 'Dance',
-          expression: 'Happy',
-          dialogue: 'Beep boop! Ready!',
-          accentColor: CHARACTER_META.robot.defaultColor,
           audio: null,
         },
       ],
@@ -232,8 +404,13 @@ export default function App() {
     audioManagerRef.current = new StudioAudioManager();
   }
 
-  // Undo / Redo History State for scenes
-  const [scenes, setScenesRaw] = useState<SceneData[]>(createInitialScenes);
+  // Project Launcher & Undo / Redo History State
+  const [projectName, setProjectName] = useState('My Cartoon Story');
+  const [showNewProjectModal, setShowNewProjectModal] = useState(true);
+  const [hasCreatedProject, setHasCreatedProject] = useState(false);
+  const [scenes, setScenesRaw] = useState<SceneData[]>(() =>
+    createBlankScenes('village')
+  );
   const historyPastRef = useRef<SceneData[][]>([]);
   const historyFutureRef = useRef<SceneData[][]>([]);
   const [, setHistoryTick] = useState(0);
@@ -303,8 +480,8 @@ export default function App() {
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [handleUndo, handleRedo]);
 
-  const [activeSceneId, setActiveSceneId] = useState<string>('scene-1');
-  const [selectedActorId, setSelectedActorId] = useState<string | null>('actor-1');
+  const [activeSceneId, setActiveSceneId] = useState<string>(() => scenes[0]?.id || 'scene-1');
+  const [selectedActorId, setSelectedActorId] = useState<string | null>(null);
   const [modelControlsOpen, setModelControlsOpen] = useState(false);
   const [aspectRatio, setAspectRatio] = useState<AspectRatioMode>('16:9');
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -319,13 +496,27 @@ export default function App() {
     useState<ActivityPickerTarget | null>(null);
   const [noticeText, setNoticeText] = useState<string | null>(null);
 
-  // Story Playback State
+  // Story Playback & Live Stage Preview State
   const [isPlaying, setIsPlaying] = useState(false);
   const [storyElapsed, setStoryElapsed] = useState(0);
   const [cameraPoseTrigger, setCameraPoseTrigger] = useState<{
     pose: CameraPose;
     seq: number;
   } | null>(null);
+  const [liveEffectPreview, setLiveEffectPreview] =
+    useState<LiveEffectPreview | null>(null);
+
+  const triggerEffectPreview = useCallback(
+    (actorId: string, kind: LiveEffectPreviewKind) => {
+      setIsPlaying(false);
+      setLiveEffectPreview((prev) => ({
+        actorId,
+        kind,
+        seq: (prev?.seq ?? 0) + 1,
+      }));
+    },
+    []
+  );
 
   // Mic Recording State
   const micSessionRef = useRef<MicRecordingSession | null>(null);
@@ -413,6 +604,36 @@ export default function App() {
   const triggerCameraPose = useCallback((pose: CameraPose) => {
     setCameraPoseTrigger((prev) => ({ pose, seq: (prev?.seq ?? 0) + 1 }));
   }, []);
+
+  const handleCreateProject = useCallback(
+    (cfg: NewProjectConfig) => {
+      const nextScenes = createProjectFromConfig(cfg);
+      audioManagerRef.current?.stop();
+      historyPastRef.current = [];
+      historyFutureRef.current = [];
+      setHistoryTick((t) => t + 1);
+
+      setProjectName(cfg.projectName);
+      setAspectRatio(cfg.aspectRatio);
+      setScenesRaw(nextScenes);
+      setActiveSceneId(nextScenes[0].id);
+      setSelectedActorId(nextScenes[0].actors[0]?.id ?? null);
+      setModelControlsOpen(false);
+      setMotionPathEditMode('idle');
+      setIsPlaying(false);
+      setStoryElapsed(0);
+      setLiveEffectPreview(null);
+      setHasCreatedProject(true);
+      setShowNewProjectModal(false);
+      triggerCameraPose(nextScenes[0].cameraPose);
+      showNotice(
+        cfg.templateId === 'blank'
+          ? `Started blank project "${cfg.projectName}"`
+          : `Loaded template for "${cfg.projectName}"`
+      );
+    },
+    [showNotice, triggerCameraPose]
+  );
 
   // Playback Loop
   const lastPlayedSceneIdRef = useRef<string | null>(null);
@@ -736,6 +957,7 @@ export default function App() {
           )
         );
         setActivityModalTarget(null);
+        triggerEffectPreview(target.actorId, 'activity');
         return;
       }
 
@@ -803,6 +1025,7 @@ export default function App() {
         setModelControlsOpen(true);
         setActivityModalTarget(null);
         setMobileSheetOpen(false);
+        triggerEffectPreview(twinA.id, 'activity');
         return;
       }
 
@@ -855,8 +1078,16 @@ export default function App() {
       setModelControlsOpen(true);
       setActivityModalTarget(null);
       setMobileSheetOpen(false);
+      triggerEffectPreview(actor.id, 'activity');
     },
-    [activeScene.actors, activeSceneId, activityModalTarget, commitScenes, computeNextSpawnPos]
+    [
+      activeScene.actors,
+      activeSceneId,
+      activityModalTarget,
+      commitScenes,
+      computeNextSpawnPos,
+      triggerEffectPreview,
+    ]
   );
 
   const handleDeleteCustomModel = useCallback((id: string) => {
@@ -968,16 +1199,20 @@ export default function App() {
         setScenesRaw(updater);
       } else {
         commitScenes(updater, true);
+        if (points.length >= 2) {
+          triggerEffectPreview(actorId, 'motionPath');
+        }
       }
       if (options?.exitEditMode) {
         setMotionPathEditMode('idle');
       }
     },
-    [activeSceneId, commitScenes]
+    [activeSceneId, commitScenes, triggerEffectPreview]
   );
 
   const handleAppendMotionWaypoint = useCallback(
     (actorId: string, x: number, z: number) => {
+      let shouldPreview = false;
       commitScenes((prev) =>
         prev.map((s) =>
           s.id === activeSceneId
@@ -995,6 +1230,7 @@ export default function App() {
                     ...existingPts,
                     [x, z],
                   ];
+                  if (nextPts.length >= 2) shouldPreview = true;
                   return {
                     ...a,
                     motionPath: {
@@ -1010,8 +1246,11 @@ export default function App() {
             : s
         )
       );
+      if (shouldPreview) {
+        triggerEffectPreview(actorId, 'motionPath');
+      }
     },
-    [activeSceneId, commitScenes]
+    [activeSceneId, commitScenes, triggerEffectPreview]
   );
 
   const handlePreviewActorTransitions = useCallback(
@@ -1627,12 +1866,19 @@ export default function App() {
     exportCancelledRef.current = false;
     activeRecorderRef.current = recorder;
 
+    const exportSlug =
+      projectName
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-|-$/g, '') || 'jit-3d-cartoon-story';
+
     setExportState({
       active: true,
       progress: 0,
       statusText: `Recording Scene 1 of ${scenes.length}...`,
       downloadUrl: null,
-      fileName: 'jit-3d-cartoon-story.webm',
+      fileName: `${exportSlug}.webm`,
     });
 
     setStoryElapsed(0);
@@ -1641,7 +1887,7 @@ export default function App() {
     setSelectedActorId(null);
     triggerCameraPose(scenes[0].cameraPose);
     setIsPlaying(true);
-  }, [exportState.downloadUrl, scenes, showNotice, triggerCameraPose]);
+  }, [exportState.downloadUrl, projectName, scenes, showNotice, triggerCameraPose]);
 
   const handleCancelExport = useCallback(() => {
     exportCancelledRef.current = true;
@@ -1666,10 +1912,12 @@ export default function App() {
     <div className="h-dvh w-screen flex flex-col bg-[#0B0E14] text-slate-100 overflow-hidden">
       {/* 1. Top Header */}
       <TopHeader
+        projectName={projectName}
         canUndo={historyPastRef.current.length > 0}
         canRedo={historyFutureRef.current.length > 0}
         isFullscreen={isFullscreen}
         isExporting={exportState.active}
+        onNewProject={() => setShowNewProjectModal(true)}
         onUndo={handleUndo}
         onRedo={handleRedo}
         onToggleFullscreen={handleToggleFullscreen}
@@ -1796,6 +2044,7 @@ export default function App() {
             cameraStartTime={activeScene.cameraStartTime}
             cameraEndTime={activeScene.cameraEndTime}
             cameraPoseTrigger={cameraPoseTrigger}
+            liveEffectPreview={liveEffectPreview}
             motionPathEditMode={motionPathEditMode}
             audioManager={audioManagerRef.current}
             onSelectActor={handleSelectActor}
@@ -1834,6 +2083,7 @@ export default function App() {
           onDeleteActor={handleDeleteActor}
           onSetMotionPathEditMode={setMotionPathEditMode}
           onPreviewActorTransitions={handlePreviewActorTransitions}
+          onTriggerEffectPreview={triggerEffectPreview}
           onToggleMicRecord={handleToggleMicRecord}
           onUploadAudio={handleUploadAudio}
           onClearAudio={handleClearAudio}
@@ -1903,6 +2153,18 @@ export default function App() {
         onSelectActivity={handleConfirmActivityFromModal}
         onClose={() => setActivityModalTarget(null)}
       />
+
+      {/* New Project Launcher Modal */}
+      {showNewProjectModal && (
+        <NewProjectModal
+          open={showNewProjectModal}
+          canDismiss={hasCreatedProject}
+          initialProjectName={hasCreatedProject ? projectName : 'My Cartoon Story'}
+          initialAspectRatio={aspectRatio}
+          onCreateProject={handleCreateProject}
+          onClose={() => setShowNewProjectModal(false)}
+        />
+      )}
 
       {/* Video Export Modal */}
       <ExportModal

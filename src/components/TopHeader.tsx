@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import {
   Clapperboard,
   Download,
+  FolderPlus,
   Maximize2,
   Minimize2,
   Redo2,
@@ -12,10 +13,12 @@ import {
 import { usePWAInstall } from '../hooks/usePWAInstall';
 
 interface TopHeaderProps {
+  projectName: string;
   canUndo: boolean;
   canRedo: boolean;
   isFullscreen: boolean;
   isExporting: boolean;
+  onNewProject: () => void;
   onUndo: () => void;
   onRedo: () => void;
   onToggleFullscreen: () => void;
@@ -23,10 +26,12 @@ interface TopHeaderProps {
 }
 
 export function TopHeader({
+  projectName,
   canUndo,
   canRedo,
   isFullscreen,
   isExporting,
+  onNewProject,
   onUndo,
   onRedo,
   onToggleFullscreen,
@@ -38,7 +43,7 @@ export function TopHeader({
   return (
     <>
       <header className="h-13 shrink-0 bg-[#111622] border-b border-white/10 px-2.5 sm:px-5 flex items-center justify-between gap-2 sm:gap-4 z-30">
-        {/* Brand Title */}
+        {/* Brand Title + Live Project Name */}
         <div className="flex items-center gap-2 min-w-0">
           <div className="w-8 h-8 rounded-lg bg-amber-500/15 border border-amber-500/30 flex items-center justify-center shrink-0">
             <Clapperboard className="w-4 h-4 text-amber-400" />
@@ -46,10 +51,28 @@ export function TopHeader({
           <h1 className="font-display text-sm sm:text-lg font-semibold tracking-tight text-slate-100 truncate">
             JIT 3D Cartoon Studio
           </h1>
+          {projectName.trim() && (
+            <div className="hidden sm:flex items-center gap-1.5 min-w-0">
+              <span className="text-slate-600 text-sm">/</span>
+              <span className="px-2 py-0.5 rounded-md bg-[#1A2233] border border-white/10 text-xs font-medium text-amber-300 truncate max-w-[170px] lg:max-w-[240px]">
+                {projectName}
+              </span>
+            </div>
+          )}
         </div>
 
-        {/* Center Undo/Redo + Right Actions */}
+        {/* Center New Project / Undo-Redo + Right Actions */}
         <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+          <button
+            type="button"
+            onClick={onNewProject}
+            title="Start or load a new cartoon project"
+            className="h-8 px-2 sm:px-2.5 rounded-lg bg-[#1A2130] hover:bg-[#232C3F] border border-sky-400/30 text-sky-300 text-xs font-medium flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
+          >
+            <FolderPlus className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">+ New Project</span>
+          </button>
+
           {/* Undo / Redo */}
           <div className="flex items-center gap-1 mr-0.5 sm:mr-1">
             <button

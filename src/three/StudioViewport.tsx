@@ -77,6 +77,14 @@ const _groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
 
 export type MotionPathEditMode = 'idle' | 'pickEnd' | 'drawFreehand' | 'addWaypoint';
 
+export type LiveEffectPreviewKind = 'entrance' | 'exit' | 'motionPath' | 'activity';
+
+export interface LiveEffectPreview {
+  actorId: string;
+  kind: LiveEffectPreviewKind;
+  seq: number;
+}
+
 function detectSoftwareGl(): boolean {
   try {
     const probeCanvas = document.createElement('canvas');
@@ -128,6 +136,7 @@ interface StudioViewportProps {
   cameraStartTime?: number;
   cameraEndTime?: number;
   cameraPoseTrigger: { pose: CameraPose; seq: number } | null;
+  liveEffectPreview?: LiveEffectPreview | null;
   motionPathEditMode: MotionPathEditMode;
   audioManager: StudioAudioManager;
   onSelectActor: (id: string | null) => void;
@@ -158,6 +167,7 @@ export const StudioViewport = forwardRef<StudioViewportHandle, StudioViewportPro
       cameraStartTime,
       cameraEndTime,
       cameraPoseTrigger,
+      liveEffectPreview = null,
       motionPathEditMode,
       audioManager,
       onSelectActor,
@@ -175,6 +185,14 @@ export const StudioViewport = forwardRef<StudioViewportHandle, StudioViewportPro
     const exportOverrideRef = useRef<{ width: number; height: number } | null>(null);
     const exportActiveLocalRef = useRef(false);
     const syncSizeRef = useRef<(() => void) | null>(null);
+    const lastPreviewSeqRef = useRef<number>(0);
+    const oneShotPreviewRef = useRef<{
+      actorId: string;
+      kind: LiveEffectPreviewKind;
+      seq: number;
+      startedAtMs: number;
+      durationSec: number;
+    } | null>(null);
 
     const propsRef = useRef({
       actors,
@@ -189,6 +207,7 @@ export const StudioViewport = forwardRef<StudioViewportHandle, StudioViewportPro
       cameraZoom,
       cameraStartTime,
       cameraEndTime,
+      liveEffectPreview,
       motionPathEditMode,
       onSelectActor,
       onMoveActor,
@@ -209,6 +228,7 @@ export const StudioViewport = forwardRef<StudioViewportHandle, StudioViewportPro
       cameraZoom,
       cameraStartTime,
       cameraEndTime,
+      liveEffectPreview,
       motionPathEditMode,
       onSelectActor,
       onMoveActor,
@@ -812,7 +832,56 @@ export const StudioViewport = forwardRef<StudioViewportHandle, StudioViewportPro
           const camSpan = Math.max(0.2, camEnd - camStart);
           const camProg = THREE.MathUtils.clamp((sceneTime - camStart) / camSpan, 0, 1);
 
-          const previewTimeline = playing || exportingNow || scrubbing || sceneTime > 0.005;
+          const isTimelineDriving = playing || exportingNow || scrubbing;
+          const previewTimeline = isTimelineDriving;
+
+          // Manage 1.5s live one-shot preview whenever an Activity, Motion Path, or Entrance/Exit effect is applied
+          const incomingPreview = propsRef.current.liveEffectPreview;
+          if (isTimelineDriving) {
+            oneShotPreviewRef.current = null;
+            if (incomingPreview && incomingPreview.seq > lastPreviewSeqRef.current) {
+              lastPreviewSeqRef.current = incomingPreview.seq;
+            }
+          } else if (incomingPreview && incomingPreview.seq > lastPreviewSeqRef.current) {
+            lastPreviewSeqRef.current = incomingPreview.seq;
+            const targetActor = propsRef.current.actors.find(
+              (a) => a.id === incomingPreview.actorId
+            );
+            const inDur = THREE.MathUtils.clamp(
+              targetActor?.transitions?.entranceDuration ?? 0.8,
+              0.3,
+              2.0
+            );
+            const outDur = THREE.MathUtils.clamp(
+              targetActor?.transitions?.exitDuration ?? 0.8,
+              0.3,
+              2.0
+            );
+            const previewDur =
+              incomingPreview.kind === 'entrance'
+                ? Math.max(1.5, inDur + 0.35)
+                : incomingPreview.kind === 'exit'
+                  ? Math.max(1.5, outDur + 0.25)
+                  : 1.5;
+
+            oneShotPreviewRef.current = {
+              actorId: incomingPreview.actorId,
+              kind: incomingPreview.kind,
+              seq: incomingPreview.seq,
+              startedAtMs: performance.now(),
+              durationSec: previewDur,
+            };
+          }
+
+          let activeOneShot = oneShotPreviewRef.current;
+          let oneShotElapsed = 0;
+          if (activeOneShot) {
+            oneShotElapsed = (performance.now() - activeOneShot.startedAtMs) / 1000;
+            if (oneShotElapsed >= activeOneShot.durationSec) {
+              oneShotPreviewRef.current = null;
+              activeOneShot = null;
+            }
+          }
 
           if ((playing || (previewTimeline && !inst.camTransitionActive)) && zoomMode !== 'none') {
             _camGoalTarget.set(...baseCam.target);
@@ -863,7 +932,8 @@ export const StudioViewport = forwardRef<StudioViewportHandle, StudioViewportPro
             inst.motionPathViz.group.visible = false;
           }
 
-          const isScrubMode = !playing && (scrubbing || sceneTime > 0.005);
+          // Keep animations continuously alive at 60fps whenever paused; freeze only while actively dragging scrubber
+          const isScrubMode = !playing && scrubbing;
           const animClockTime = isScrubMode ? sceneTime : elapsed;
 
           inst.rigs.forEach((entry) => {
@@ -902,42 +972,99 @@ export const StudioViewport = forwardRef<StudioViewportHandle, StudioViewportPro
               entry.cachedCurveLength = 0;
             }
 
-            if (mp && entry.cachedCurve && previewTimeline) {
+            const actorOneShot =
+              activeOneShot && activeOneShot.actorId === actor.id ? activeOneShot : null;
+
+            const resolveTravelAnim = (): AnimationState =>
+              actor.actorType === 'vehicle'
+                ? actor.kind === 'helicopter' || actor.kind === 'airplane'
+                  ? 'Fly in Sky'
+                  : actor.kind === 'boat'
+                    ? 'Sail on Water'
+                    : 'Drive/Ride Forward'
+                : actor.actorType === 'animal'
+                  ? actor.kind === 'bird'
+                    ? 'Fly'
+                    : actor.kind === 'fish'
+                      ? 'Swim'
+                      : 'Walk'
+                  : 'Walk';
+
+            if (actorOneShot?.kind === 'motionPath' && mp && entry.cachedCurve) {
+              const rawP = THREE.MathUtils.clamp(oneShotElapsed / 1.5, 0, 1);
+              const smoothP = rawP * rawP * (3 - 2 * rawP);
+              sampleMotionCurve(entry.cachedCurve, smoothP, _pathPos, _pathTan);
+              baseX = _pathPos.x;
+              baseZ = _pathPos.z;
+              if (entry.cachedCurveLength > 0.05) {
+                baseRotY = Math.atan2(_pathTan.x, _pathTan.z);
+                if (!travelAnims.includes(actor.animation)) {
+                  activeAnim = resolveTravelAnim();
+                }
+              }
+            } else if (mp && entry.cachedCurve && previewTimeline) {
               sampleMotionCurve(entry.cachedCurve, actProg, _pathPos, _pathTan);
               baseX = _pathPos.x;
               baseZ = _pathPos.z;
               if (entry.cachedCurveLength > 0.05) {
                 baseRotY = Math.atan2(_pathTan.x, _pathTan.z);
                 if (actInWindow && !travelAnims.includes(actor.animation)) {
-                  activeAnim =
-                    actor.actorType === 'vehicle'
-                      ? actor.kind === 'helicopter' || actor.kind === 'airplane'
-                        ? 'Fly in Sky'
-                        : actor.kind === 'boat'
-                          ? 'Sail on Water'
-                          : 'Drive/Ride Forward'
-                      : actor.actorType === 'animal'
-                        ? actor.kind === 'bird'
-                          ? 'Fly'
-                          : actor.kind === 'fish'
-                            ? 'Swim'
-                            : 'Walk'
-                        : 'Walk';
+                  activeAnim = resolveTravelAnim();
                 }
               }
             }
 
-            // Apply Entrance & Exit Effects (synced to timeline bar, previewed in real time & export)
+            // Apply Entrance & Exit Effects (timeline-synced during playback/scrub, or 1.5s live one-shot preview)
+            let effActor = actor;
+            let effSceneTime = previewTimeline ? sceneTime : 0;
+            let effSceneDur = safeDur;
+            let effPlaying = playing;
+            let effScrubbing = scrubbing;
+            let effExporting = exportingNow;
+
+            if (actorOneShot && (actorOneShot.kind === 'entrance' || actorOneShot.kind === 'exit')) {
+              const trCfg = actor.transitions;
+              if (actorOneShot.kind === 'entrance' && trCfg && trCfg.entrance !== 'none') {
+                const inDur = THREE.MathUtils.clamp(trCfg.entranceDuration ?? 0.8, 0.3, 2.0);
+                effSceneDur = Math.max(safeDur, inDur + 2.0);
+                effActor = {
+                  ...actor,
+                  startTime: 0,
+                  endTime: effSceneDur,
+                  transitions: { ...trCfg, exit: 'none' },
+                };
+                const animSpan = Math.max(0.3, inDur);
+                effSceneTime = Math.min(animSpan, oneShotElapsed);
+                effPlaying = true;
+                effScrubbing = false;
+                effExporting = false;
+              } else if (actorOneShot.kind === 'exit' && trCfg && trCfg.exit !== 'none') {
+                const outDur = THREE.MathUtils.clamp(trCfg.exitDuration ?? 0.8, 0.3, 2.0);
+                effSceneDur = Math.max(safeDur, outDur + 2.0);
+                effActor = {
+                  ...actor,
+                  startTime: 0,
+                  endTime: effSceneDur,
+                  transitions: { ...trCfg, entrance: 'none' },
+                };
+                const exitProgress = THREE.MathUtils.clamp(oneShotElapsed / outDur, 0, 0.96);
+                effSceneTime = effSceneDur - outDur + exitProgress * outDur;
+                effPlaying = true;
+                effScrubbing = false;
+                effExporting = false;
+              }
+            }
+
             const isVisible = entry.transitionCtrl.apply({
               rigRoot: entry.rig.root,
               speechSprite: entry.rig.speechSprite,
               selectionRing: entry.rig.selectionRing,
-              actor,
-              sceneTime,
-              sceneDuration: safeDur,
-              isPlaying: playing,
-              isScrubbing: scrubbing,
-              isExporting: exportingNow,
+              actor: effActor,
+              sceneTime: effSceneTime,
+              sceneDuration: effSceneDur,
+              isPlaying: effPlaying,
+              isScrubbing: effScrubbing,
+              isExporting: effExporting,
               camera,
               baseX,
               baseZ,
@@ -1187,8 +1314,8 @@ export const StudioViewport = forwardRef<StudioViewportHandle, StudioViewportPro
 
         entry.actor = actor;
 
-        // When parked at t=0 in edit mode, keep actor positioned at its edit position
-        if (!isPlaying && !isScrubbing && sceneProgress <= 0.001) {
+        // Keep paused actor positioned at its edit coordinates unless a 1.5s one-shot preview is driving it
+        if (!isPlaying && !isScrubbing && oneShotPreviewRef.current?.actorId !== actor.id) {
           entry.rig.root.position.set(actor.position[0], 0, actor.position[1]);
           entry.rig.root.rotation.y = actor.rotationY;
           entry.rig.root.scale.setScalar(actor.scale);

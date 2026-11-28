@@ -66,7 +66,7 @@ import {
   VEHICLE_META,
   VehicleKind,
 } from '../types/studio';
-import { MotionPathEditMode } from '../three/StudioViewport';
+import { LiveEffectPreviewKind, MotionPathEditMode } from '../three/StudioViewport';
 import {
   getCachedThumbnail,
   getThumbnailKey,
@@ -134,6 +134,7 @@ interface InspectorPanelProps {
   onDeleteActor: (id: string) => void;
   onSetMotionPathEditMode: (mode: MotionPathEditMode) => void;
   onPreviewActorTransitions: (actor: SceneActor) => void;
+  onTriggerEffectPreview: (actorId: string, kind: LiveEffectPreviewKind) => void;
   onToggleMicRecord: (targetActorId: string | null) => void;
   onUploadAudio: (targetActorId: string | null, file: File) => void;
   onClearAudio: (targetActorId: string | null) => void;
@@ -265,6 +266,7 @@ export function InspectorPanel({
   onDeleteActor,
   onSetMotionPathEditMode,
   onPreviewActorTransitions,
+  onTriggerEffectPreview,
   onToggleMicRecord,
   onUploadAudio,
   onClearAudio,
@@ -580,6 +582,9 @@ export function InspectorPanel({
                 ? 'addWaypoint'
                 : 'idle'
           );
+          if (nextMode === 'straight' && nextPts.length >= 2) {
+            onTriggerEffectPreview(selectedActor.id, 'motionPath');
+          }
         };
 
         const reversePath = () => {
@@ -590,6 +595,7 @@ export function InspectorPanel({
             motionPath: { ...resolvedMp, enabled: true, points: rev },
             walkPath: undefined,
           });
+          onTriggerEffectPreview(selectedActor.id, 'motionPath');
         };
 
         const clearPath = () => {
@@ -613,6 +619,25 @@ export function InspectorPanel({
           onUpdateActor(selectedActor.id, {
             transitions: { ...tr, ...patch },
           });
+          if (
+            patch.entrance !== undefined ||
+            patch.entranceDirection !== undefined ||
+            patch.entranceDuration !== undefined
+          ) {
+            const nextIn = patch.entrance ?? tr.entrance;
+            if (nextIn !== 'none') {
+              onTriggerEffectPreview(selectedActor.id, 'entrance');
+            }
+          } else if (
+            patch.exit !== undefined ||
+            patch.exitDirection !== undefined ||
+            patch.exitDuration !== undefined
+          ) {
+            const nextOut = patch.exit ?? tr.exit;
+            if (nextOut !== 'none') {
+              onTriggerEffectPreview(selectedActor.id, 'exit');
+            }
+          }
         };
 
         const showInDirs = tr.entrance === 'flyIn' || tr.entrance === 'wipe';
@@ -668,11 +693,12 @@ export function InspectorPanel({
                 <select
                   aria-label="Activity"
                   value={selectedActor.animation}
-                  onChange={(e) =>
+                  onChange={(e) => {
                     onUpdateActor(selectedActor.id, {
                       animation: e.target.value as AnimationState,
-                    })
-                  }
+                    });
+                    onTriggerEffectPreview(selectedActor.id, 'activity');
+                  }}
                   className="flex-1 min-w-0 h-8 px-2 rounded-lg bg-[#0B0E14] border border-white/12 text-xs text-slate-100 focus:outline-none focus:border-amber-500 cursor-pointer"
                 >
                   {actorActivities.map((anim) => (
@@ -723,24 +749,41 @@ export function InspectorPanel({
                   <Route className="w-3.5 h-3.5 text-sky-400" />
                   <span>Motion Path (Walk / Run / Move)</span>
                 </span>
-                <button
-                  type="button"
-                  onClick={() => {
-                    const nextEnabled = !resolvedMp.enabled;
-                    if (!nextEnabled) onSetMotionPathEditMode('idle');
-                    onUpdateActor(selectedActor.id, {
-                      motionPath: { ...resolvedMp, enabled: nextEnabled },
-                      walkPath: undefined,
-                    });
-                  }}
-                  className={`px-2 py-0.5 rounded text-[10px] font-semibold cursor-pointer ${
-                    resolvedMp.enabled
-                      ? 'bg-emerald-500 text-slate-950'
-                      : 'bg-white/10 text-slate-300 hover:bg-white/15'
-                  }`}
-                >
-                  {resolvedMp.enabled ? 'ON' : 'OFF'}
-                </button>
+                <div className="flex items-center gap-1">
+                  {resolvedMp.enabled && resolvedMp.points.length >= 2 && (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        onTriggerEffectPreview(selectedActor.id, 'motionPath')
+                      }
+                      className="px-2 py-0.5 rounded bg-sky-500/20 hover:bg-sky-500/30 border border-sky-400/40 text-[10px] font-semibold text-sky-200 flex items-center gap-1 cursor-pointer"
+                    >
+                      <Play className="w-2.5 h-2.5 fill-current" />
+                      <span>Preview Path</span>
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const nextEnabled = !resolvedMp.enabled;
+                      if (!nextEnabled) onSetMotionPathEditMode('idle');
+                      onUpdateActor(selectedActor.id, {
+                        motionPath: { ...resolvedMp, enabled: nextEnabled },
+                        walkPath: undefined,
+                      });
+                      if (nextEnabled && resolvedMp.points.length >= 2) {
+                        onTriggerEffectPreview(selectedActor.id, 'motionPath');
+                      }
+                    }}
+                    className={`px-2 py-0.5 rounded text-[10px] font-semibold cursor-pointer ${
+                      resolvedMp.enabled
+                        ? 'bg-emerald-500 text-slate-950'
+                        : 'bg-white/10 text-slate-300 hover:bg-white/15'
+                    }`}
+                  >
+                    {resolvedMp.enabled ? 'ON' : 'OFF'}
+                  </button>
+                </div>
               </div>
 
               {/* 3 Visual Path Mode Buttons */}
@@ -928,14 +971,18 @@ export function InspectorPanel({
                             <button
                               key={cs}
                               type="button"
-                              onClick={() =>
+                              onClick={() => {
                                 onUpdateActor(selectedActor.id, {
                                   motionPath: {
                                     ...resolvedMp,
                                     cornerStyle: cs,
                                   },
-                                })
-                              }
+                                });
+                                onTriggerEffectPreview(
+                                  selectedActor.id,
+                                  'motionPath'
+                                );
+                              }}
                               className={`py-1 px-2 rounded-md text-[10px] font-medium border cursor-pointer ${
                                 active
                                   ? 'bg-sky-500/20 border-sky-400 text-sky-200'
