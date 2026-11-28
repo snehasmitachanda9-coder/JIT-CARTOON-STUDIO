@@ -769,7 +769,7 @@ export function createCustomModelRig(blueprint: CustomModelBlueprint): PropOrCus
           hitProxy.scale.set(Math.max(0.65, safeAspect), 1, 1);
           resolve();
         },
-        512
+        1024
       );
     });
 

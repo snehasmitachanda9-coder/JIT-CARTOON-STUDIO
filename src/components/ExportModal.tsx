@@ -23,7 +23,9 @@ export function ExportModal({ exportState, onCancel, onClose }: ExportModalProps
             </div>
             <div>
               <h3 className="text-sm font-semibold text-slate-100">
-                {exportState.active ? 'Exporting 1080p 3D Video' : 'Video Ready'}
+                {exportState.active
+                  ? `Rendering 1080p HD Video... (${pct}%)`
+                  : '1080p HD Video Ready'}
               </h3>
               <p className="text-xs text-slate-400">{exportState.statusText}</p>
             </div>
@@ -43,15 +45,17 @@ export function ExportModal({ exportState, onCancel, onClose }: ExportModalProps
 
         {exportState.active ? (
           <div className="space-y-3">
-            <div className="w-full h-2 rounded-full bg-white/10 overflow-hidden">
+            <div className="w-full h-2.5 rounded-full bg-white/10 overflow-hidden">
               <div
                 className="h-full bg-amber-500 transition-[width] duration-150"
                 style={{ width: `${pct}%` }}
               />
             </div>
             <div className="flex items-center justify-between text-xs">
-              <span className="text-slate-400">Capturing 1080p 60fps 3D frames...</span>
-              <span className="font-mono-tabular text-amber-400 font-medium">{pct}%</span>
+              <span className="text-slate-300 font-medium">
+                Rendering 1080p HD Video... ({pct}%)
+              </span>
+              <span className="font-mono-tabular text-amber-400 font-semibold">{pct}%</span>
             </div>
             <div className="flex justify-end pt-1">
               <button

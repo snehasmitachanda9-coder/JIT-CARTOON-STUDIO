@@ -11,6 +11,8 @@ function configureColorTexture(
   tex.wrapS = THREE.RepeatWrapping;
   tex.wrapT = THREE.RepeatWrapping;
   tex.repeat.set(repeatX, repeatY);
+  tex.minFilter = THREE.LinearFilter;
+  tex.magFilter = THREE.LinearFilter;
   tex.anisotropy = maxAnisotropy;
   tex.needsUpdate = true;
   return tex;
@@ -85,7 +87,10 @@ export function getSharedFabricTexture(maxAnisotropy = 4): THREE.CanvasTexture {
 
 const irisTextureCache = new Map<string, THREE.CanvasTexture>();
 
-export function createEyeIrisTexture(irisHex: string): THREE.CanvasTexture {
+export function createEyeIrisTexture(
+  irisHex: string,
+  maxAnisotropy = 8
+): THREE.CanvasTexture {
   const key = irisHex.toLowerCase();
   const cached = irisTextureCache.get(key);
   if (cached) return cached;
@@ -161,7 +166,9 @@ export function createEyeIrisTexture(irisHex: string): THREE.CanvasTexture {
 
   const tex = new THREE.CanvasTexture(canvas);
   tex.colorSpace = THREE.SRGBColorSpace;
-  tex.anisotropy = 4;
+  tex.minFilter = THREE.LinearFilter;
+  tex.magFilter = THREE.LinearFilter;
+  tex.anisotropy = maxAnisotropy;
   tex.needsUpdate = true;
   tex.userData.sharedResource = true;
   irisTextureCache.set(key, tex);
@@ -390,6 +397,8 @@ export function createChibiFaceTexture(
 
   const tex = new THREE.CanvasTexture(canvas);
   tex.colorSpace = THREE.SRGBColorSpace;
+  tex.minFilter = THREE.LinearFilter;
+  tex.magFilter = THREE.LinearFilter;
   tex.anisotropy = maxAnisotropy;
   tex.needsUpdate = true;
   tex.userData.sharedResource = true;
@@ -510,6 +519,8 @@ export function createChibiSkinTexture(
 
   const tex = new THREE.CanvasTexture(canvas);
   tex.colorSpace = THREE.SRGBColorSpace;
+  tex.minFilter = THREE.LinearFilter;
+  tex.magFilter = THREE.LinearFilter;
   tex.anisotropy = maxAnisotropy;
   tex.needsUpdate = true;
   tex.userData.sharedResource = true;
@@ -932,6 +943,8 @@ export function createChalkboardTexture(maxAnisotropy = 4): THREE.CanvasTexture 
 
   const tex = new THREE.CanvasTexture(canvas);
   tex.colorSpace = THREE.SRGBColorSpace;
+  tex.minFilter = THREE.LinearFilter;
+  tex.magFilter = THREE.LinearFilter;
   tex.anisotropy = maxAnisotropy;
   tex.needsUpdate = true;
   return tex;
@@ -952,6 +965,8 @@ export function createContactShadowTexture(): THREE.CanvasTexture {
 
   const tex = new THREE.CanvasTexture(canvas);
   tex.colorSpace = THREE.SRGBColorSpace;
+  tex.minFilter = THREE.LinearFilter;
+  tex.magFilter = THREE.LinearFilter;
   tex.needsUpdate = true;
   return tex;
 }
@@ -961,11 +976,12 @@ export function createSpeechBubbleTexture(text: string): {
   aspect: number;
 } {
   const canvas = document.createElement('canvas');
-  canvas.width = 512;
-  canvas.height = 220;
+  canvas.width = 1024;
+  canvas.height = 440;
   const ctx = canvas.getContext('2d')!;
 
-  ctx.clearRect(0, 0, 512, 220);
+  ctx.clearRect(0, 0, 1024, 440);
+  ctx.scale(2, 2);
 
   // Word wrap (supports Bengali & English)
   ctx.font = '700 26px "Noto Sans Bengali", "Plus Jakarta Sans", system-ui, sans-serif';
@@ -1037,6 +1053,9 @@ export function createSpeechBubbleTexture(text: string): {
 
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
+  texture.minFilter = THREE.LinearFilter;
+  texture.magFilter = THREE.LinearFilter;
+  texture.generateMipmaps = false;
   texture.needsUpdate = true;
 
   return { texture, aspect: 512 / 220 };
@@ -1109,6 +1128,8 @@ export function createSkyDomeTexture(
 
   const tex = new THREE.CanvasTexture(canvas);
   tex.colorSpace = THREE.SRGBColorSpace;
+  tex.minFilter = THREE.LinearFilter;
+  tex.magFilter = THREE.LinearFilter;
   tex.needsUpdate = true;
   return tex;
 }

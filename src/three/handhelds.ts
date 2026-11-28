@@ -270,7 +270,7 @@ export function createImageCutoutTexture(
   imageDataUrl: string,
   removeWhiteBg: boolean,
   onReady: (tex: THREE.CanvasTexture, aspect: number) => void,
-  maxDim = 256
+  maxDim = 512
 ): void {
   const img = new Image();
   img.onload = () => {
@@ -305,6 +305,9 @@ export function createImageCutoutTexture(
 
     const tex = new THREE.CanvasTexture(canvas);
     tex.colorSpace = THREE.SRGBColorSpace;
+    tex.minFilter = THREE.LinearFilter;
+    tex.magFilter = THREE.LinearFilter;
+    tex.anisotropy = 8;
     tex.needsUpdate = true;
     onReady(tex, w / h);
   };

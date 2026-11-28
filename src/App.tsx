@@ -575,6 +575,9 @@ export default function App() {
     cancel: () => void;
   } | null>(null);
   const exportCancelledRef = useRef(false);
+  const exportPhaseRef = useRef<'idle' | 'preparing' | 'recording'>('idle');
+  const exportSlugRef = useRef('jit-3d-cartoon-story');
+  const exportPrepRafRef = useRef<number | null>(null);
 
   const activeScene = useMemo(
     () => scenes.find((s) => s.id === activeSceneId) || scenes[0],
@@ -875,13 +878,27 @@ export default function App() {
       audioManagerRef.current?.playSceneAudio(trackUrl, sceneOffset);
     }
 
-    if (exportState.active) {
+    if (exportState.active && exportPhaseRef.current === 'recording') {
       const idx = scenes.findIndex((s) => s.id === targetScene.id) + 1;
-      setExportState((prev) => ({
-        ...prev,
-        progress: totalDuration > 0 ? Math.min(0.99, storyElapsed / totalDuration) : 0,
-        statusText: `Recording Scene ${idx} of ${scenes.length}...`,
-      }));
+      const nextProg = totalDuration > 0 ? Math.min(0.99, storyElapsed / totalDuration) : 0;
+      const nextPct = Math.round(nextProg * 100);
+      const dimsLabel =
+        aspectRatio === '9:16'
+          ? '1080×1920'
+          : aspectRatio === '1:1'
+            ? '1440×1440'
+            : '1920×1080';
+      const nextStatus = `Scene ${idx} of ${scenes.length} · ${dimsLabel} @ 60fps`;
+      setExportState((prev) => {
+        if (Math.round(prev.progress * 100) === nextPct && prev.statusText === nextStatus) {
+          return prev;
+        }
+        return {
+          ...prev,
+          progress: nextProg,
+          statusText: nextStatus,
+        };
+      });
     }
   }, [
     isPlaying,
@@ -890,36 +907,42 @@ export default function App() {
     totalDuration,
     triggerCameraPose,
     exportState.active,
+    aspectRatio,
   ]);
 
   // Complete Video Export at end of story
   useEffect(() => {
-    if (!exportState.active) return;
+    if (!exportState.active || exportPhaseRef.current !== 'recording') return;
     if (!isPlaying && storyElapsed >= totalDuration - 0.05 && activeRecorderRef.current) {
+      exportPhaseRef.current = 'idle';
       const recorder = activeRecorderRef.current;
       activeRecorderRef.current = null;
 
-      void recorder.stop().then(({ blob, mimeType }) => {
-        if (exportCancelledRef.current) return;
-        const ext = mimeType.includes('mp4') ? 'mp4' : 'webm';
-        const fileName = `jit-3d-cartoon-story.${ext}`;
-        const url = URL.createObjectURL(blob);
+      const finishTimer = window.setTimeout(() => {
+        void recorder.stop().then(({ blob, mimeType }) => {
+          if (exportCancelledRef.current) return;
+          const ext = mimeType.includes('mp4') ? 'mp4' : 'webm';
+          const fileName = `${exportSlugRef.current}-1080p.${ext}`;
+          const url = URL.createObjectURL(blob);
 
-        setExportState({
-          active: false,
-          progress: 1,
-          statusText: 'Your 3D cartoon movie is ready.',
-          downloadUrl: url,
-          fileName,
+          setExportState({
+            active: false,
+            progress: 1,
+            statusText: 'Your 1080p HD cartoon movie is ready.',
+            downloadUrl: url,
+            fileName,
+          });
+
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = fileName;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
         });
+      }, 110);
 
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = fileName;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-      });
+      return () => window.clearTimeout(finishTimer);
     }
   }, [exportState.active, isPlaying, storyElapsed, totalDuration]);
 
@@ -2159,24 +2182,17 @@ export default function App() {
     [commitScenes, showNotice, triggerCameraPose]
   );
 
-  // Video Export
+  // Video Export (1080p Full HD @ 60fps, 12 Mbps)
   const handleExportVideo = useCallback(() => {
-    if (!viewportRef.current) return;
+    if (!viewportRef.current || exportPhaseRef.current !== 'idle') return;
     setMotionPathEditMode('idle');
+    setModelControlsOpen(false);
+    audioManagerRef.current?.stop();
     const audioStream = audioManagerRef.current?.getExportAudioStream() ?? null;
-    const recorder = viewportRef.current.startVideoCapture(audioStream);
-
-    if (!recorder) {
-      showNotice('Video recording is not supported in this browser.');
-      return;
-    }
 
     if (exportState.downloadUrl) {
       URL.revokeObjectURL(exportState.downloadUrl);
     }
-
-    exportCancelledRef.current = false;
-    activeRecorderRef.current = recorder;
 
     const exportSlug =
       projectName
@@ -2184,27 +2200,72 @@ export default function App() {
         .toLowerCase()
         .replace(/[^a-z0-9]+/g, '-')
         .replace(/^-|-$/g, '') || 'jit-3d-cartoon-story';
+    exportSlugRef.current = exportSlug;
 
-    setExportState({
-      active: true,
-      progress: 0,
-      statusText: `Recording Scene 1 of ${scenes.length}...`,
-      downloadUrl: null,
-      fileName: `${exportSlug}.webm`,
-    });
+    const dimsLabel =
+      aspectRatio === '9:16'
+        ? '1080×1920'
+        : aspectRatio === '1:1'
+          ? '1440×1440'
+          : '1920×1080';
 
+    exportCancelledRef.current = false;
+    exportPhaseRef.current = 'preparing';
+    setIsPlaying(false);
     setStoryElapsed(0);
     lastPlayedSceneIdRef.current = null;
     setActiveSceneId(scenes[0].id);
     setSelectedActorId(null);
-    triggerCameraPose(scenes[0].cameraPose);
-    setIsPlaying(true);
-  }, [exportState.downloadUrl, projectName, scenes, showNotice, triggerCameraPose]);
+    viewportRef.current.snapToCameraPose(scenes[0].cameraPose);
+
+    setExportState({
+      active: true,
+      progress: 0,
+      statusText: `Preparing ${dimsLabel} 1080p HD Studio...`,
+      downloadUrl: null,
+      fileName: `${exportSlug}-1080p.webm`,
+    });
+
+    // Wait 2 animation frames so Scene 1 & 00:00.0 state commit cleanly before Frame 0 capture
+    if (exportPrepRafRef.current !== null) {
+      cancelAnimationFrame(exportPrepRafRef.current);
+    }
+    exportPrepRafRef.current = requestAnimationFrame(() => {
+      exportPrepRafRef.current = requestAnimationFrame(() => {
+        exportPrepRafRef.current = null;
+        if (exportCancelledRef.current || !viewportRef.current) return;
+
+        viewportRef.current.snapToCameraPose(scenes[0].cameraPose);
+        const recorder = viewportRef.current.startVideoCapture(audioStream);
+        if (!recorder) {
+          exportPhaseRef.current = 'idle';
+          setExportState((prev) => ({ ...prev, active: false, progress: 0 }));
+          showNotice('Video recording is not supported in this browser.');
+          return;
+        }
+
+        activeRecorderRef.current = recorder;
+        exportPhaseRef.current = 'recording';
+        setExportState((prev) => ({
+          ...prev,
+          progress: 0,
+          statusText: `Scene 1 of ${scenes.length} · ${dimsLabel} @ 60fps`,
+        }));
+        setIsPlaying(true);
+      });
+    });
+  }, [aspectRatio, exportState.downloadUrl, projectName, scenes, showNotice]);
 
   const handleCancelExport = useCallback(() => {
     exportCancelledRef.current = true;
+    exportPhaseRef.current = 'idle';
+    if (exportPrepRafRef.current !== null) {
+      cancelAnimationFrame(exportPrepRafRef.current);
+      exportPrepRafRef.current = null;
+    }
     activeRecorderRef.current?.cancel();
     activeRecorderRef.current = null;
+    audioManagerRef.current?.stop();
     setIsPlaying(false);
     setExportState((prev) => ({ ...prev, active: false, progress: 0 }));
   }, []);

@@ -104,11 +104,60 @@ function detectSoftwareGl(): boolean {
 export interface StudioViewportHandle {
   getCameraPose: () => CameraPose;
   animateToCameraPose: (pose: CameraPose) => void;
+  snapToCameraPose: (pose: CameraPose) => void;
   captureThumbnail: () => string | null;
   startVideoCapture: (audioStream?: MediaStream | null) => {
     stop: () => Promise<{ blob: Blob; mimeType: string }>;
     cancel: () => void;
   } | null;
+}
+
+function applyCrystalTextureSettings(scene: THREE.Scene, maxAnisotropy: number): void {
+  const upgradeColorTex = (tex: THREE.Texture | null | undefined, disableMipmaps = false) => {
+    if (!tex) return;
+    let changed = false;
+    if (tex.colorSpace !== THREE.SRGBColorSpace) {
+      tex.colorSpace = THREE.SRGBColorSpace;
+      changed = true;
+    }
+    if (tex.magFilter !== THREE.LinearFilter) {
+      tex.magFilter = THREE.LinearFilter;
+      changed = true;
+    }
+    if (tex.minFilter !== THREE.LinearFilter) {
+      tex.minFilter = THREE.LinearFilter;
+      changed = true;
+    }
+    if (disableMipmaps && tex.generateMipmaps) {
+      tex.generateMipmaps = false;
+      changed = true;
+    }
+    if (tex.anisotropy !== maxAnisotropy) {
+      tex.anisotropy = maxAnisotropy;
+      changed = true;
+    }
+    if (changed) {
+      tex.needsUpdate = true;
+    }
+  };
+
+  if (scene.background instanceof THREE.Texture) {
+    upgradeColorTex(scene.background, true);
+  }
+
+  scene.traverse((obj) => {
+    if (obj instanceof THREE.Mesh) {
+      const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
+      mats.forEach((mat) => {
+        if (!mat) return;
+        const m = mat as THREE.MeshStandardMaterial;
+        upgradeColorTex(m.map);
+        upgradeColorTex(m.emissiveMap);
+      });
+    } else if (obj instanceof THREE.Sprite) {
+      upgradeColorTex(obj.material?.map, true);
+    }
+  });
 }
 
 type UnifiedRigEntry = (
@@ -289,6 +338,14 @@ export const StudioViewport = forwardRef<StudioViewportHandle, StudioViewportPro
         _camGoalTarget.set(...pose.target);
         inst.camTransitionActive = true;
       },
+      snapToCameraPose: (pose: CameraPose) => {
+        const inst = threeRef.current;
+        if (!inst) return;
+        inst.camTransitionActive = false;
+        inst.camera.position.set(...pose.position);
+        inst.controls.target.set(...pose.target);
+        inst.controls.update();
+      },
       captureThumbnail: () => {
         const inst = threeRef.current;
         if (!inst) return null;
@@ -320,15 +377,33 @@ export const StudioViewport = forwardRef<StudioViewportHandle, StudioViewportPro
         if (typeof canvas.captureStream !== 'function') return null;
 
         const ratio = propsRef.current.aspectRatio;
-        const targetW = ratio === '9:16' ? 1080 : ratio === '1:1' ? 1080 : 1920;
-        const targetH = ratio === '9:16' ? 1920 : ratio === '1:1' ? 1080 : 1080;
+        const targetW = ratio === '9:16' ? 1080 : ratio === '1:1' ? 1440 : 1920;
+        const targetH = ratio === '9:16' ? 1920 : ratio === '1:1' ? 1440 : 1080;
 
         exportOverrideRef.current = { width: targetW, height: targetH };
         exportActiveLocalRef.current = true;
+
+        // Hide all editor-only helpers so exported HD video is 100% clean
         inst.motionPathViz.group.visible = false;
         inst.rigs.forEach((entry) => {
           entry.rig.selectionRing.visible = false;
         });
+
+        // Upgrade every texture in the scene for crystal-clear 1080p HD rendering
+        inst.maxAnisotropy = Math.max(
+          1,
+          inst.renderer.capabilities.getMaxAnisotropy() || 4
+        );
+        applyCrystalTextureSettings(inst.scene, inst.maxAnisotropy);
+
+        if (inst.bgMedia.video) {
+          try {
+            inst.bgMedia.video.currentTime = 0;
+            void inst.bgMedia.video.play().catch(() => {});
+          } catch {
+            // ignore
+          }
+        }
 
         inst.renderer.setPixelRatio(1);
         inst.renderer.setSize(targetW, targetH, false);
@@ -346,8 +421,7 @@ export const StudioViewport = forwardRef<StudioViewportHandle, StudioViewportPro
           syncSizeRef.current?.();
         };
 
-        const captureFps = inst.isSoftwareGl ? 30 : 60;
-        const videoStream = canvas.captureStream(captureFps);
+        const videoStream = canvas.captureStream(60);
         const combinedTracks = [...videoStream.getVideoTracks()];
         if (audioStream) {
           audioStream.getAudioTracks().forEach((t) => combinedTracks.push(t));
@@ -355,6 +429,7 @@ export const StudioViewport = forwardRef<StudioViewportHandle, StudioViewportPro
         const combinedStream = new MediaStream(combinedTracks);
 
         const preferredMime = [
+          'video/mp4;codecs=avc1.4d402a,mp4a.40.2',
           'video/mp4;codecs=avc1.42E01E,mp4a.40.2',
           'video/mp4',
           'video/webm;codecs=vp9,opus',
@@ -363,12 +438,21 @@ export const StudioViewport = forwardRef<StudioViewportHandle, StudioViewportPro
           'video/webm',
         ].find((m) => typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported(m));
 
-        const recorder = preferredMime
-          ? new MediaRecorder(combinedStream, {
-              mimeType: preferredMime,
-              videoBitsPerSecond: inst.isSoftwareGl ? 8_000_000 : 10_000_000,
-            })
-          : new MediaRecorder(combinedStream);
+        let recorder: MediaRecorder;
+        try {
+          recorder = preferredMime
+            ? new MediaRecorder(combinedStream, {
+                mimeType: preferredMime,
+                videoBitsPerSecond: 12_000_000,
+              })
+            : new MediaRecorder(combinedStream, {
+                videoBitsPerSecond: 12_000_000,
+              });
+        } catch {
+          recorder = preferredMime
+            ? new MediaRecorder(combinedStream, { mimeType: preferredMime })
+            : new MediaRecorder(combinedStream);
+        }
 
         const chunks: BlobPart[] = [];
         recorder.ondataavailable = (ev) => {
@@ -380,7 +464,7 @@ export const StudioViewport = forwardRef<StudioViewportHandle, StudioViewportPro
           stop: () =>
             new Promise<{ blob: Blob; mimeType: string }>((resolve) => {
               recorder.onstop = () => {
-                const mimeType = recorder.mimeType || 'video/webm';
+                const mimeType = recorder.mimeType || preferredMime || 'video/webm';
                 const blob = new Blob(chunks, { type: mimeType });
                 videoStream.getTracks().forEach((t) => t.stop());
                 restoreViewportResolution();
@@ -389,7 +473,7 @@ export const StudioViewport = forwardRef<StudioViewportHandle, StudioViewportPro
               if (recorder.state !== 'inactive') {
                 recorder.stop();
               } else {
-                const mimeType = recorder.mimeType || 'video/webm';
+                const mimeType = recorder.mimeType || preferredMime || 'video/webm';
                 videoStream.getTracks().forEach((t) => t.stop());
                 restoreViewportResolution();
                 resolve({ blob: new Blob(chunks, { type: mimeType }), mimeType });
@@ -509,7 +593,7 @@ export const StudioViewport = forwardRef<StudioViewportHandle, StudioViewportPro
       customGroundMesh.position.y = -0.005;
       scene.add(customGroundMesh);
 
-      const maxAnisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy() || 4);
+      const maxAnisotropy = Math.max(1, renderer.capabilities.getMaxAnisotropy() || 4);
       const rigs = new Map<string, UnifiedRigEntry>();
 
       threeRef.current = {
@@ -1218,7 +1302,7 @@ export const StudioViewport = forwardRef<StudioViewportHandle, StudioViewportPro
           renderer.render(scene, camera);
         }
 
-        if (isSoftwareGl) {
+        if (isSoftwareGl && !exportActiveLocalRef.current && !propsRef.current.isExporting) {
           afterDraw(tick);
         } else {
           frameId = requestAnimationFrame(tick);
@@ -1366,6 +1450,8 @@ export const StudioViewport = forwardRef<StudioViewportHandle, StudioViewportPro
         videoTex.colorSpace = THREE.SRGBColorSpace;
         videoTex.minFilter = THREE.LinearFilter;
         videoTex.magFilter = THREE.LinearFilter;
+        videoTex.generateMipmaps = false;
+        videoTex.anisotropy = inst.maxAnisotropy;
 
         inst.bgMedia.video = video;
         inst.bgMedia.tex = videoTex;
@@ -1378,6 +1464,11 @@ export const StudioViewport = forwardRef<StudioViewportHandle, StudioViewportPro
             return;
           }
           tex.colorSpace = THREE.SRGBColorSpace;
+          tex.minFilter = THREE.LinearFilter;
+          tex.magFilter = THREE.LinearFilter;
+          tex.generateMipmaps = false;
+          tex.anisotropy = inst.maxAnisotropy;
+          tex.needsUpdate = true;
           inst.bgMedia.tex = tex;
           inst.scene.background = tex;
         });
@@ -1388,6 +1479,13 @@ export const StudioViewport = forwardRef<StudioViewportHandle, StudioViewportPro
     useEffect(() => {
       const inst = threeRef.current;
       if (!inst || !cameraPoseTrigger) return;
+      if (exportActiveLocalRef.current || propsRef.current.isExporting) {
+        inst.camTransitionActive = false;
+        inst.camera.position.set(...cameraPoseTrigger.pose.position);
+        inst.controls.target.set(...cameraPoseTrigger.pose.target);
+        inst.controls.update();
+        return;
+      }
       _camGoalPos.set(...cameraPoseTrigger.pose.position);
       _camGoalTarget.set(...cameraPoseTrigger.pose.target);
       inst.camTransitionActive = true;
@@ -1497,8 +1595,13 @@ export const StudioViewport = forwardRef<StudioViewportHandle, StudioViewportPro
 
         entry.actor = actor;
 
-        // Keep paused actor positioned at its edit coordinates unless a 1.5s one-shot preview is driving it
-        if (!isPlaying && !isScrubbing && oneShotPreviewRef.current?.actorId !== actor.id) {
+        // Keep paused actor positioned at its edit coordinates unless a 1.5s one-shot preview or export is driving it
+        if (
+          !isPlaying &&
+          !isScrubbing &&
+          !isExporting &&
+          oneShotPreviewRef.current?.actorId !== actor.id
+        ) {
           entry.rig.root.position.set(actor.position[0], 0, actor.position[1]);
           entry.rig.root.rotation.y = actor.rotationY;
           entry.rig.root.scale.setScalar(actor.scale);
@@ -1521,13 +1624,15 @@ export const StudioViewport = forwardRef<StudioViewportHandle, StudioViewportPro
         }
       }
 
+      applyCrystalTextureSettings(inst.scene, inst.maxAnisotropy);
+
       // Glowing 3D Motion Path Visualizer (visible in edit mode, hidden during playback & video export)
       const selActor = actors.find((a) => a.id === selectedActorId) || null;
       const selMp = selActor ? resolveActorMotionPath(selActor) : null;
       if (motionPathEditMode !== 'drawFreehand') {
         inst.motionPathViz.sync(selMp, !isPlaying && !isExporting && Boolean(selMp?.enabled));
       }
-    }, [actors, selectedActorId, isPlaying, isScrubbing, isExporting, sceneProgress, motionPathEditMode]);
+    }, [actors, selectedActorId, isPlaying, isScrubbing, isExporting, motionPathEditMode]);
 
     // 5. Responsive Aspect Ratio Frame (16:9 / 9:16 / 1:1)
     const [boxSize, setBoxSize] = useState<{ width: number; height: number }>({
