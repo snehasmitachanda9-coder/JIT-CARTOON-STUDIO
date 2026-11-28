@@ -6,6 +6,7 @@ import {
   Maximize2,
   Minimize2,
   Redo2,
+  Save,
   Smartphone,
   Undo2,
   X,
@@ -14,11 +15,13 @@ import { usePWAInstall } from '../hooks/usePWAInstall';
 
 interface TopHeaderProps {
   projectName: string;
+  hasCreatedProject: boolean;
   canUndo: boolean;
   canRedo: boolean;
   isFullscreen: boolean;
   isExporting: boolean;
   onNewProject: () => void;
+  onSaveProject: () => void;
   onUndo: () => void;
   onRedo: () => void;
   onToggleFullscreen: () => void;
@@ -27,11 +30,13 @@ interface TopHeaderProps {
 
 export function TopHeader({
   projectName,
+  hasCreatedProject,
   canUndo,
   canRedo,
   isFullscreen,
   isExporting,
   onNewProject,
+  onSaveProject,
   onUndo,
   onRedo,
   onToggleFullscreen,
@@ -61,12 +66,23 @@ export function TopHeader({
           )}
         </div>
 
-        {/* Center New Project / Undo-Redo + Right Actions */}
+        {/* Center Save / New Project / Undo-Redo + Right Actions */}
         <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
           <button
             type="button"
+            onClick={onSaveProject}
+            disabled={!hasCreatedProject}
+            title="Save Project (Ctrl+S)"
+            className="h-8 px-2 sm:px-2.5 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 disabled:opacity-45 disabled:cursor-not-allowed border border-emerald-400/40 text-emerald-200 text-xs font-medium flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
+          >
+            <Save className="w-3.5 h-3.5 text-emerald-400" />
+            <span className="hidden sm:inline">Save Project</span>
+          </button>
+
+          <button
+            type="button"
             onClick={onNewProject}
-            title="Start or load a new cartoon project"
+            title="Create New or Resume Saved Project"
             className="h-8 px-2 sm:px-2.5 rounded-lg bg-[#1A2130] hover:bg-[#232C3F] border border-sky-400/30 text-sky-300 text-xs font-medium flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
           >
             <FolderPlus className="w-3.5 h-3.5" />

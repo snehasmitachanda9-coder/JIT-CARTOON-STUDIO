@@ -1238,10 +1238,12 @@ export function updateAnimalAnimation(
   elapsed: number,
   delta: number,
   lipSyncLevel: number,
-  autoLipSyncActive: boolean
+  autoLipSyncActive: boolean,
+  speedMultiplier = 1.0
 ): void {
   const k = 1 - Math.exp(-10 * Math.min(delta, 0.05));
   const t = elapsed + rig.phaseOffset * 0.25;
+  void speedMultiplier;
 
   let bodyY = rig.baseBodyY;
   let bodyRotX = 0;

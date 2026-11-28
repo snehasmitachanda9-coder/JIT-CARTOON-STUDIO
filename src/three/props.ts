@@ -983,13 +983,15 @@ export function updatePropOrCustomAnimation(
   elapsed: number,
   delta: number,
   lipSyncLevel: number,
-  hasDialogue: boolean
+  hasDialogue: boolean,
+  speedMultiplier = 1.0
 ): void {
   const k = 1 - Math.exp(-10 * Math.min(delta, 0.05));
   const t = elapsed;
+  const spdMult = THREE.MathUtils.clamp(speedMultiplier, 0.25, 3.0);
 
   if (rig.mixer) {
-    rig.mixer.update(Math.min(delta, 0.08));
+    rig.mixer.update(Math.min(delta, 0.08) * spdMult);
   }
 
   // Vehicle & Custom Vehicle Animations
@@ -1005,17 +1007,17 @@ export function updatePropOrCustomAnimation(
 
     if (rig.wheels.length > 0 && driving) {
       rig.wheels.forEach((w) => {
-        w.rotation.x += delta * 6.5;
+        w.rotation.x += delta * 6.5 * spdMult;
       });
     }
     if (rig.rotors.length > 0 && (hovering || flying || driving)) {
       rig.rotors.forEach((r) => {
-        r.rotation.y += delta * 18;
+        r.rotation.y += delta * 18 * Math.max(0.75, spdMult);
       });
     }
     if (rig.propellers.length > 0 && (flying || driving)) {
       rig.propellers.forEach((p) => {
-        p.rotation.z += delta * 22;
+        p.rotation.z += delta * 22 * Math.max(0.75, spdMult);
       });
     }
 
@@ -1051,7 +1053,7 @@ export function updatePropOrCustomAnimation(
 
   // Custom / Prop extras
   if (rig.wheels.length > 0 && (animation === 'Walk' || animation === 'Run' || animation === 'Drive/Ride Forward')) {
-    const spinSpeed = animation === 'Run' ? 9 : 5.5;
+    const spinSpeed = (animation === 'Run' ? 9 : 5.5) * spdMult;
     rig.wheels.forEach((w) => {
       w.rotation.x += delta * spinSpeed;
     });

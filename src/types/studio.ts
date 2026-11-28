@@ -280,6 +280,7 @@ export interface MotionPathConfig {
   mode: MotionPathMode;
   points: Array<[number, number]>; // [x, z] waypoints in meters on ground
   cornerStyle?: 'rounded' | 'sharp';
+  speed?: number; // 0.25..3.0 movement & gait multiplier (default 1.0)
 }
 
 export type EntranceEffect =
@@ -413,6 +414,15 @@ export interface ExportProgress {
   statusText: string;
   downloadUrl: string | null;
   fileName: string;
+}
+
+export interface SavedProjectRecord {
+  id: string;
+  projectName: string;
+  aspectRatio: AspectRatioMode;
+  scenes: SceneData[];
+  updatedAt: number;
+  thumbnailDataUrl?: string;
 }
 
 export const ENVIRONMENT_META: Record<

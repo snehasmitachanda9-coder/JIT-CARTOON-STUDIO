@@ -55,6 +55,7 @@ import {
   LightingMode,
   PROP_META,
   PropKind,
+  SavedProjectRecord,
   SceneActor,
   SceneData,
   VEHICLE_META,
@@ -66,6 +67,17 @@ import {
   StudioAudioManager,
 } from './utils/audioManager';
 import { generateOfflineProceduralModel } from './utils/offlineModelGenerator';
+import {
+  AUTO_DRAFT_KEY,
+  SAVED_PROJECTS_KEY,
+  deleteSavedProjectFromStorage,
+  downloadProjectAsJson,
+  loadAutoDraft,
+  loadSavedProjects,
+  parseImportedProjectFile,
+  saveAutoDraft,
+  saveProjectToStorage,
+} from './utils/projectStorage';
 
 const CUSTOM_MODELS_KEY = 'jit_custom_3d_models_v1';
 const LEGACY_CUSTOM_MODELS_KEY = 'jit-3d-custom-models-v1';
@@ -79,6 +91,13 @@ function clearOldCachedSceneStateOnLoad(): void {
     for (let i = 0; i < window.localStorage.length; i++) {
       const k = window.localStorage.key(i);
       if (!k) continue;
+      if (
+        k === SAVED_PROJECTS_KEY ||
+        k === AUTO_DRAFT_KEY ||
+        k === CUSTOM_MODELS_KEY
+      ) {
+        continue;
+      }
       if (
         k === LEGACY_CUSTOM_MODELS_KEY ||
         /^(jit[-_]?(scene|scenes|story|studio|timeline|actors?|cache)|scene[-_]?state|studio[-_]?state|cartoon[-_]?studio)/i.test(
@@ -415,10 +434,19 @@ export default function App() {
     audioManagerRef.current = new StudioAudioManager();
   }
 
-  // Project Launcher & Undo / Redo History State
+  // Project Launcher, Save/Resume Storage & Undo/Redo History State
+  const [currentProjectId, setCurrentProjectId] = useState(
+    () => `proj-${Date.now()}-${Math.floor(Math.random() * 1000)}`
+  );
   const [projectName, setProjectName] = useState('My Cartoon Story');
   const [showNewProjectModal, setShowNewProjectModal] = useState(true);
   const [hasCreatedProject, setHasCreatedProject] = useState(false);
+  const [savedProjects, setSavedProjects] = useState<SavedProjectRecord[]>(
+    loadSavedProjects
+  );
+  const [autoDraft, setAutoDraft] = useState<SavedProjectRecord | null>(
+    loadAutoDraft
+  );
   const [scenes, setScenesRaw] = useState<SceneData[]>(() =>
     createBlankScenes('village')
   );
@@ -466,7 +494,7 @@ export default function App() {
     setHistoryTick((t) => t + 1);
   }, []);
 
-  // Keyboard shortcuts: Ctrl+Z / Ctrl+Y
+  // Keyboard shortcuts: Ctrl+Z / Ctrl+Y (Undo/Redo) — Ctrl+S handled after handleSaveProject
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement | null;
@@ -628,6 +656,9 @@ export default function App() {
       historyFutureRef.current = [];
       setHistoryTick((t) => t + 1);
 
+      setCurrentProjectId(
+        `proj-${Date.now()}-${Math.floor(Math.random() * 1000)}`
+      );
       setProjectName(cfg.projectName);
       setAspectRatio(cfg.aspectRatio);
       setScenesRaw(nextScenes);
@@ -648,6 +679,140 @@ export default function App() {
       );
     },
     [showNotice, triggerCameraPose]
+  );
+
+  // Save Project, Auto-Save Draft, Resume, Delete & JSON File Import/Export
+  const handleSaveProject = useCallback(() => {
+    const cleanName = projectName.trim() || 'My Cartoon Story';
+    const thumb = viewportRef.current?.captureThumbnail() ?? undefined;
+    const record: SavedProjectRecord = {
+      id: currentProjectId,
+      projectName: cleanName,
+      aspectRatio,
+      scenes,
+      updatedAt: Date.now(),
+      thumbnailDataUrl: thumb,
+    };
+    const { saved, quotaTrimmed } = saveProjectToStorage(record);
+    setSavedProjects(saved);
+    saveAutoDraft(record);
+    setAutoDraft(record);
+    showNotice(
+      quotaTrimmed
+        ? `Saved "${cleanName}" (oversized uploads trimmed to fit storage).`
+        : `Project "${cleanName}" saved!`
+    );
+  }, [aspectRatio, currentProjectId, projectName, scenes, showNotice]);
+
+  // Debounced silent auto-draft backup while editing
+  useEffect(() => {
+    if (!hasCreatedProject || scenes.length === 0) return;
+    const timer = window.setTimeout(() => {
+      const draft: SavedProjectRecord = {
+        id: currentProjectId,
+        projectName: projectName.trim() || 'My Cartoon Story',
+        aspectRatio,
+        scenes,
+        updatedAt: Date.now(),
+      };
+      saveAutoDraft(draft);
+      setAutoDraft(draft);
+    }, 1200);
+    return () => window.clearTimeout(timer);
+  }, [aspectRatio, currentProjectId, hasCreatedProject, projectName, scenes]);
+
+  // Ctrl+S / Cmd+S shortcut to save project
+  useEffect(() => {
+    const onSaveKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
+        e.preventDefault();
+        if (hasCreatedProject) {
+          handleSaveProject();
+        }
+      }
+    };
+    window.addEventListener('keydown', onSaveKey);
+    return () => window.removeEventListener('keydown', onSaveKey);
+  }, [handleSaveProject, hasCreatedProject]);
+
+  const handleResumeSavedProject = useCallback(
+    (record: SavedProjectRecord) => {
+      if (!record.scenes || record.scenes.length === 0) return;
+      // Bump uidCounter above any restored numeric suffixes to prevent ID collisions
+      for (const sc of record.scenes) {
+        const sm = /-(\d+)$/.exec(sc.id);
+        if (sm) uidCounter = Math.max(uidCounter, Number(sm[1]) + 10);
+        for (const ac of sc.actors || []) {
+          const am = /-(\d+)$/.exec(ac.id);
+          if (am) uidCounter = Math.max(uidCounter, Number(am[1]) + 10);
+        }
+      }
+
+      audioManagerRef.current?.stop();
+      historyPastRef.current = [];
+      historyFutureRef.current = [];
+      setHistoryTick((t) => t + 1);
+
+      setCurrentProjectId(record.id);
+      setProjectName(record.projectName);
+      setAspectRatio(record.aspectRatio);
+      setScenesRaw(record.scenes);
+      setActiveSceneId(record.scenes[0].id);
+      setSelectedActorId(record.scenes[0].actors[0]?.id ?? null);
+      setModelControlsOpen(false);
+      setMotionPathEditMode('idle');
+      setIsPlaying(false);
+      setStoryElapsed(0);
+      setLiveEffectPreview(null);
+      setHasCreatedProject(true);
+      setShowNewProjectModal(false);
+      triggerCameraPose(record.scenes[0].cameraPose);
+      showNotice(`Resumed "${record.projectName}"!`);
+    },
+    [showNotice, triggerCameraPose]
+  );
+
+  const handleDeleteSavedProject = useCallback(
+    (id: string) => {
+      const next = deleteSavedProjectFromStorage(id);
+      setSavedProjects(next);
+      showNotice('Deleted saved project.');
+    },
+    [showNotice]
+  );
+
+  const handleDownloadProjectJson = useCallback(
+    (record?: SavedProjectRecord) => {
+      const target: SavedProjectRecord = record ?? {
+        id: currentProjectId,
+        projectName: projectName.trim() || 'My Cartoon Story',
+        aspectRatio,
+        scenes,
+        updatedAt: Date.now(),
+      };
+      downloadProjectAsJson(target);
+      showNotice(`Downloaded "${target.projectName}" backup (.jit3d.json).`);
+    },
+    [aspectRatio, currentProjectId, projectName, scenes, showNotice]
+  );
+
+  const handleImportProjectJson = useCallback(
+    async (file: File) => {
+      try {
+        const raw = await file.text();
+        const imported = parseImportedProjectFile(raw);
+        const { saved } = saveProjectToStorage(imported);
+        setSavedProjects(saved);
+        handleResumeSavedProject(imported);
+      } catch (err) {
+        showNotice(
+          err instanceof Error
+            ? err.message
+            : 'Could not load that project JSON file.'
+        );
+      }
+    },
+    [handleResumeSavedProject, showNotice]
   );
 
   // Playback Loop
@@ -1226,6 +1391,7 @@ export default function App() {
                       enabled: true,
                       mode,
                       cornerStyle,
+                      speed: a.motionPath?.speed ?? 1.0,
                       points,
                     },
                     walkPath: undefined,
@@ -1277,6 +1443,7 @@ export default function App() {
                       enabled: true,
                       mode: 'multiPoint',
                       cornerStyle: a.motionPath?.cornerStyle ?? 'rounded',
+                      speed: a.motionPath?.speed ?? 1.0,
                       points: nextPts,
                     },
                     walkPath: undefined,
@@ -2058,11 +2225,13 @@ export default function App() {
       {/* 1. Top Header */}
       <TopHeader
         projectName={projectName}
+        hasCreatedProject={hasCreatedProject}
         canUndo={historyPastRef.current.length > 0}
         canRedo={historyFutureRef.current.length > 0}
         isFullscreen={isFullscreen}
         isExporting={exportState.active}
         onNewProject={() => setShowNewProjectModal(true)}
+        onSaveProject={handleSaveProject}
         onUndo={handleUndo}
         onRedo={handleRedo}
         onToggleFullscreen={handleToggleFullscreen}
@@ -2311,7 +2480,13 @@ export default function App() {
           canDismiss={hasCreatedProject}
           initialProjectName={hasCreatedProject ? projectName : 'My Cartoon Story'}
           initialAspectRatio={aspectRatio}
+          savedProjects={savedProjects}
+          autoDraft={autoDraft}
           onCreateProject={handleCreateProject}
+          onResumeProject={handleResumeSavedProject}
+          onDeleteSavedProject={handleDeleteSavedProject}
+          onDownloadProjectJson={handleDownloadProjectJson}
+          onImportProjectJson={handleImportProjectJson}
           onClose={() => setShowNewProjectModal(false)}
         />
       )}

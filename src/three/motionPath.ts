@@ -7,7 +7,10 @@ const _upAxis = new THREE.Vector3(0, 1, 0);
 
 export function resolveActorMotionPath(actor: SceneActor): MotionPathConfig | null {
   if (actor.motionPath && actor.motionPath.enabled && actor.motionPath.points.length >= 2) {
-    return actor.motionPath;
+    return {
+      ...actor.motionPath,
+      speed: actor.motionPath.speed ?? 1.0,
+    };
   }
   if (actor.walkPath && actor.walkPath.enabled) {
     return {
@@ -18,6 +21,7 @@ export function resolveActorMotionPath(actor: SceneActor): MotionPathConfig | nu
         [actor.walkPath.end[0], actor.walkPath.end[1]],
       ],
       cornerStyle: 'sharp',
+      speed: 1.0,
     };
   }
   return null;

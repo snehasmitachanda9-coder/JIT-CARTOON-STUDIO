@@ -655,50 +655,115 @@ export function buildCartoonHand(
 export function createCrownMesh(isTiara: boolean): THREE.Group {
   const crown = new THREE.Group();
   const goldMat = makeStudioGlossyMat(0xfbbf24, {
-    metalness: 0.85,
-    roughness: 0.16,
-    clearcoat: 0.9,
+    metalness: 0.88,
+    roughness: 0.14,
+    clearcoat: 0.95,
   });
-  const gemMat = makeStudioGlossyMat(isTiara ? 0xec4899 : 0xef4444, {
+  const velvetMat = makeStudioStandardMat(0x991b1b, { roughness: 0.72 });
+  const rubyMat = makeStudioGlossyMat(isTiara ? 0xec4899 : 0xef4444, {
     emissive: isTiara ? 0xdb2777 : 0xb91c1c,
-    emissiveIntensity: 0.4,
-    roughness: 0.1,
+    emissiveIntensity: 0.48,
+    roughness: 0.08,
+    clearcoat: 1.0,
+  });
+  const emeraldMat = makeStudioGlossyMat(0x10b981, {
+    emissive: 0x059669,
+    emissiveIntensity: 0.42,
+    roughness: 0.08,
+    clearcoat: 1.0,
+  });
+  const sapphireMat = makeStudioGlossyMat(0x38bdf8, {
+    emissive: 0x0284c7,
+    emissiveIntensity: 0.42,
+    roughness: 0.08,
     clearcoat: 1.0,
   });
 
-  const rad = isTiara ? 0.18 : 0.22;
+  const rad = isTiara ? 0.19 : 0.24;
+  const bandH = isTiara ? 0.07 : 0.115;
+
+  // Flared golden crown band + lower torus rim
   const band = new THREE.Mesh(
-    new THREE.CylinderGeometry(
-      rad * 1.05,
-      rad,
-      isTiara ? 0.07 : 0.1,
-      32,
-      1,
-      true
-    ),
+    new THREE.CylinderGeometry(rad * 1.12, rad, bandH, 32, 1, false),
     goldMat
   );
   crown.add(band);
 
-  const count = isTiara ? 3 : 5;
+  const lowerRim = new THREE.Mesh(
+    new THREE.TorusGeometry(rad, 0.018, 12, 32),
+    goldMat
+  );
+  lowerRim.rotation.x = Math.PI / 2;
+  lowerRim.position.y = -bandH * 0.46;
+  crown.add(lowerRim);
+
+  // Royal velvet inner cushion dome for King/Queen/Prince crowns
+  if (!isTiara) {
+    const cap = new THREE.Mesh(
+      new THREE.SphereGeometry(rad * 0.96, 24, 16, 0, Math.PI * 2, 0, Math.PI * 0.55),
+      velvetMat
+    );
+    cap.scale.set(1, 0.72, 1);
+    cap.position.y = 0.025;
+    crown.add(cap);
+  }
+
+  const count = isTiara ? 5 : 6;
+  const gemMats = [rubyMat, emeraldMat, sapphireMat];
   for (let i = 0; i < count; i++) {
     const angle = isTiara
-      ? -0.7 + (i / (count - 1)) * 1.4
+      ? -1.05 + (i / (count - 1)) * 2.1
       : (i / count) * Math.PI * 2;
+    const isCenterTiara = isTiara && i === 2;
+    const spikeH = isTiara ? (isCenterTiara ? 0.12 : 0.082) : 0.13;
+    const spikeR = isTiara ? 0.028 : 0.04;
+    const tipY = bandH * 0.45 + spikeH;
+
     const spike = new THREE.Mesh(
-      new THREE.ConeGeometry(0.036, isTiara ? 0.09 : 0.11, 20),
+      new THREE.ConeGeometry(spikeR, spikeH, 20),
       goldMat
     );
     spike.position.set(
-      Math.sin(angle) * rad,
-      isTiara ? 0.07 : 0.09,
-      Math.cos(angle) * rad
+      Math.sin(angle) * rad * 1.05,
+      bandH * 0.45 + spikeH * 0.45,
+      Math.cos(angle) * rad * 1.05
     );
     crown.add(spike);
+
+    // Sculpted gold orb finial atop each crown point
+    const finial = new THREE.Mesh(
+      new THREE.SphereGeometry(isTiara ? 0.016 : 0.024, 14, 12),
+      goldMat
+    );
+    finial.position.set(
+      Math.sin(angle) * rad * 1.05,
+      tipY - 0.005,
+      Math.cos(angle) * rad * 1.05
+    );
+    crown.add(finial);
+
+    // Sparkling gems around the band
+    const bandGem = new THREE.Mesh(
+      new THREE.SphereGeometry(isTiara ? 0.02 : 0.027, 14, 12),
+      gemMats[i % gemMats.length]
+    );
+    bandGem.scale.set(1, 1.15, 0.7);
+    bandGem.position.set(
+      Math.sin(angle) * (rad * 1.08),
+      0.005,
+      Math.cos(angle) * (rad * 1.08)
+    );
+    crown.add(bandGem);
   }
-  const gem = new THREE.Mesh(new THREE.OctahedronGeometry(0.044, 1), gemMat);
-  gem.position.set(0, 0.04, rad + 0.01);
-  crown.add(gem);
+
+  // Prominent center front jewel
+  const centerGem = new THREE.Mesh(
+    new THREE.OctahedronGeometry(isTiara ? 0.036 : 0.048, 1),
+    rubyMat
+  );
+  centerGem.position.set(0, 0.02, rad * 1.14);
+  crown.add(centerGem);
+
   return crown;
 }
 
@@ -1442,30 +1507,39 @@ function buildSculptedHumanoidAssembly(spec: HumanoidSpec): SculptedHumanoidPart
     bodyPivot.add(sash);
   }
 
-  // Flowing Cape
+  // Flowing Cape (Superhero, Royal Velvet Mantle with Ermine Collar & Gold Brooch)
   if (accessories.has('cape')) {
+    const isRoyalCape =
+      presetKind === 'king' ||
+      presetKind === 'queen' ||
+      presetKind === 'prince' ||
+      presetKind === 'princess' ||
+      headwear === 'crown' ||
+      headwear === 'tiara';
     const capeColor =
       outfitStyle === 'superhero'
         ? '#ef4444'
         : presetKind === 'witch'
           ? '#1e1b4b'
-          : '#991b1b';
+          : isRoyalCape
+            ? '#991b1b'
+            : accentColor || '#7c3aed';
     const capeMat = makeStudioStandardMat(capeColor, {
       map: fabricTex,
       roughness: 0.52,
       side: THREE.DoubleSide,
     });
     const cape = new THREE.Mesh(
-      makeDrapedCapeGeo(0.54 * scaleFactor, 0.8 * scaleFactor),
+      makeDrapedCapeGeo(0.56 * scaleFactor, 0.84 * scaleFactor),
       capeMat
     );
     cape.position.set(0, 0.58 * scaleFactor, -0.14 * scaleFactor);
     bodyPivot.add(cape);
 
-    if (presetKind === 'king' || presetKind === 'queen') {
+    if (isRoyalCape) {
       for (let i = -3; i <= 3; i++) {
         const furPuff = new THREE.Mesh(
-          new THREE.SphereGeometry(0.055 * scaleFactor, 18, 14),
+          new THREE.SphereGeometry(0.056 * scaleFactor, 18, 14),
           whiteMat
         );
         furPuff.position.set(
@@ -1475,6 +1549,13 @@ function buildSculptedHumanoidAssembly(spec: HumanoidSpec): SculptedHumanoidPart
         );
         bodyPivot.add(furPuff);
       }
+      const clasp = new THREE.Mesh(
+        new THREE.SphereGeometry(0.044 * scaleFactor, 16, 12),
+        goldMat
+      );
+      clasp.scale.set(1.1, 1.1, 0.55);
+      clasp.position.set(0, 0.55 * scaleFactor, 0.145 * scaleFactor);
+      bodyPivot.add(clasp);
     }
   }
 
@@ -3674,13 +3755,151 @@ function buildSculptedPropBlueprint(
   };
 }
 
+function enforceHumanoidRoleDefaults(
+  base: CustomModelStyleSpec,
+  text: string
+): CustomModelStyleSpec {
+  const hasVehicleWord =
+    /\b(car|bus|truck|cart|train|taxi|van|tractor|helicopter|chopper|plane|airplane|jet|boat|ship|rocket|spaceship|motorcycle|bicycle)\b/.test(
+      text
+    );
+  const acc = new Set<string>(Array.isArray(base.accessories) ? base.accessories : []);
+  let headwear = base.headwear || 'none';
+  let outfitStyle = base.outfitStyle || 'tshirt';
+  let hairStyle = base.hairStyle || 'short';
+  let archetype = base.archetype || '';
+  let primaryColor = safeHex(base.primaryColor, '#3B82F6');
+  let secondaryColor = safeHex(base.secondaryColor, '#1E293B');
+  let accentColor = safeHex(base.accentColor, '#FACC15');
+  let hairColor = safeHex(base.hairColor, '#3B2314');
+
+  if (/\bking\b/.test(text) && !/\bqueen\b/.test(text)) {
+    archetype = 'king';
+    headwear = 'crown';
+    outfitStyle = 'robe';
+    acc.add('cape');
+    if (!/\b(boy|young|clean)\b/.test(text)) acc.add('beard');
+    if (primaryColor === '#3B82F6') primaryColor = '#DC2626';
+  } else if (/\bqueen\b/.test(text)) {
+    archetype = 'queen';
+    headwear = 'crown';
+    outfitStyle = 'robe';
+    if (hairStyle === 'short') hairStyle = 'long';
+    acc.add('cape');
+    if (primaryColor === '#3B82F6') primaryColor = '#9333EA';
+  } else if (/\bprincess\b/.test(text)) {
+    archetype = 'princess';
+    headwear = 'tiara';
+    outfitStyle = 'dress';
+    if (hairStyle === 'short') hairStyle = 'long';
+    acc.add('cape');
+    if (primaryColor === '#3B82F6') primaryColor = '#EC4899';
+  } else if (/\bprince\b/.test(text)) {
+    archetype = 'prince';
+    headwear = 'crown';
+    outfitStyle = 'robe';
+    acc.add('cape');
+    if (primaryColor === '#3B82F6') primaryColor = '#2563EB';
+  } else if (/\bwizard\b/.test(text)) {
+    archetype = 'wizard';
+    headwear = 'wizardHat';
+    outfitStyle = 'robe';
+    acc.add('beard');
+    acc.add('cape');
+    if (hairColor === '#3B2314') hairColor = '#E2E8F0';
+    if (primaryColor === '#3B82F6') primaryColor = '#4F46E5';
+  } else if (/\bwitch\b/.test(text)) {
+    archetype = 'witch';
+    headwear = 'witchHat';
+    outfitStyle = 'robe';
+    if (hairStyle === 'short') hairStyle = 'long';
+    acc.add('cape');
+  } else if (/\b(soldier|knight|warrior|guard)\b/.test(text)) {
+    archetype = /\bknight\b/.test(text) ? 'knight' : 'soldier';
+    headwear = 'helmet';
+    outfitStyle = 'armor';
+    acc.add('gloves');
+    if (/\bknight\b/.test(text)) acc.add('cape');
+    if (primaryColor === '#3B82F6') {
+      primaryColor = /\bknight\b/.test(text) ? '#64748B' : '#15803D';
+    }
+  } else if (/\b(police|policeman|policewoman|cop)\b/.test(text) && !hasVehicleWord) {
+    archetype = 'police';
+    headwear = 'policeCap';
+    outfitStyle = 'uniform';
+    acc.add('gloves');
+    primaryColor = '#1D4ED8';
+    secondaryColor = '#0F172A';
+  } else if (/\b(firefighter|fireman)\b/.test(text)) {
+    archetype = 'firefighter';
+    headwear = 'helmet';
+    outfitStyle = 'uniform';
+    acc.add('gloves');
+    if (primaryColor === '#3B82F6') primaryColor = '#EF4444';
+  } else if (/\b(superhero|super\s*hero)\b/.test(text)) {
+    archetype = 'superhero';
+    outfitStyle = 'superhero';
+    acc.add('cape');
+    acc.add('mask');
+    acc.add('gloves');
+  } else if (/\bchef\b/.test(text)) {
+    archetype = 'chef';
+    headwear = 'chefHat';
+    outfitStyle = 'uniform';
+  } else if (/\b(doctor|nurse|surgeon)\b/.test(text)) {
+    archetype = 'doctor';
+    outfitStyle = 'labcoat';
+    acc.add('stethoscope');
+  } else if (/\bfarmer\b/.test(text)) {
+    archetype = 'farmer';
+    headwear = 'strawHat';
+    outfitStyle = 'overalls';
+  } else if (/\bangel\b/.test(text)) {
+    archetype = 'angel';
+    headwear = 'halo';
+    outfitStyle = 'dress';
+    acc.add('angelWings');
+  } else if (/\bfairy\b/.test(text)) {
+    archetype = 'fairy';
+    headwear = 'wreath';
+    outfitStyle = 'dress';
+    acc.add('fairyWings');
+  }
+
+  return {
+    ...base,
+    entityType: 'humanoid',
+    archetype: archetype || base.archetype,
+    hairStyle,
+    headwear,
+    outfitStyle,
+    primaryColor,
+    secondaryColor,
+    accentColor,
+    skinColor: safeHex(base.skinColor, '#FAD2B8'),
+    eyeColor: safeHex(base.eyeColor, '#0284C7'),
+    hairColor,
+    accessories: Array.from(acc),
+  };
+}
+
 // Gracefully resolves styling from blueprint.style OR infers rich Chibi-Pixar styling from older saved blueprints
 export function inferStyleFromBlueprint(
   blueprint: CustomModelBlueprint
 ): CustomModelStyleSpec {
+  const text = `${blueprint.name} ${blueprint.prompt}`.toLowerCase();
+  const hasVehicleWord =
+    /\b(car|bus|truck|cart|train|taxi|van|tractor|helicopter|chopper|plane|airplane|jet|boat|ship|rocket|spaceship|motorcycle|bicycle)\b/.test(
+      text
+    );
+  const hasHumanoidCue =
+    /\b(boy|girl|kid|man|woman|hero|superhero|wizard|witch|king|queen|prince|princess|knight|soldier|warrior|astronaut|pirate|ninja|robot|chef|doctor|nurse|police|policeman|policewoman|cop|firefighter|farmer|teacher|angel|fairy|samurai|explorer)\b/.test(
+      text
+    ) && !hasVehicleWord;
+
   const s = blueprint.style;
   if (s && ['humanoid', 'animal', 'vehicle', 'prop'].includes(s.entityType)) {
-    return {
+    const resolved: CustomModelStyleSpec = {
       ...s,
       primaryColor: safeHex(s.primaryColor, '#3B82F6'),
       secondaryColor: safeHex(s.secondaryColor, '#1E293B'),
@@ -3690,9 +3909,12 @@ export function inferStyleFromBlueprint(
       hairColor: safeHex(s.hairColor, '#3B2314'),
       accessories: Array.isArray(s.accessories) ? s.accessories : [],
     };
+    if (resolved.entityType === 'humanoid' || hasHumanoidCue) {
+      return enforceHumanoidRoleDefaults(resolved, text);
+    }
+    return resolved;
   }
 
-  const text = `${blueprint.name} ${blueprint.prompt}`.toLowerCase();
   const firstColor = safeHex(
     blueprint.parts?.find((p) => p.role === 'torso')?.color ||
       blueprint.parts?.[0]?.color,
@@ -3700,10 +3922,8 @@ export function inferStyleFromBlueprint(
   );
 
   if (
-    blueprint.category === 'vehicle' ||
-    /\b(car|bus|truck|cart|train|bike|tractor|helicopter|plane|airplane|boat|ship|rocket|spaceship)\b/.test(
-      text
-    )
+    !hasHumanoidCue &&
+    (blueprint.category === 'vehicle' || hasVehicleWord || /\b(bike|vehicle)\b/.test(text))
   ) {
     return {
       entityType: 'vehicle',
@@ -3758,18 +3978,13 @@ export function inferStyleFromBlueprint(
     };
   }
 
-  if (
-    blueprint.category === 'character' ||
-    /\b(boy|girl|kid|man|woman|hero|superhero|wizard|witch|king|queen|prince|princess|knight|astronaut|pirate|ninja|robot|chef|doctor|police|farmer|angel|fairy|samurai|explorer)\b/.test(
-      text
-    )
-  ) {
-    const isFem = /\b(girl|woman|queen|princess|fairy|witch|lady|she|daughter|mother)\b/.test(
+  if (blueprint.category === 'character' || hasHumanoidCue) {
+    const isFem = /\b(girl|woman|queen|princess|fairy|witch|lady|she|daughter|mother|nurse)\b/.test(
       text
     );
     const isRobot = /\b(robot|bot|mech|cyborg|android)\b/.test(text);
     const accessories: string[] = [];
-    if (text.includes('cape') || text.includes('hero') || text.includes('king')) {
+    if (text.includes('cape') || text.includes('hero') || text.includes('king') || text.includes('queen')) {
       accessories.push('cape');
     }
     if (text.includes('backpack') || text.includes('explorer')) {
@@ -3782,49 +3997,53 @@ export function inferStyleFromBlueprint(
     if (text.includes('mask') || text.includes('hero') || text.includes('ninja')) {
       accessories.push('mask');
     }
-    if (text.includes('beard') || text.includes('wizard') || text.includes('king')) {
+    if (text.includes('beard') || text.includes('wizard') || /\bking\b/.test(text)) {
       accessories.push('beard');
     }
-    if (text.includes('hero') || text.includes('boy') || text.includes('astronaut')) {
+    if (text.includes('hero') || text.includes('boy') || text.includes('astronaut') || text.includes('soldier') || text.includes('police')) {
       accessories.push('gloves');
     }
 
     let headwear: HeadwearKind = 'none';
     if (text.includes('cap')) headwear = 'cap';
-    else if (text.includes('crown')) headwear = isFem ? 'tiara' : 'crown';
+    else if (/\bprincess\b/.test(text) || text.includes('tiara')) headwear = 'tiara';
+    else if (/\b(king|queen|prince)\b/.test(text) || text.includes('crown')) headwear = 'crown';
     else if (text.includes('wizard')) headwear = 'wizardHat';
     else if (text.includes('witch')) headwear = 'witchHat';
     else if (text.includes('chef')) headwear = 'chefHat';
     else if (text.includes('police')) headwear = 'policeCap';
-    else if (text.includes('astronaut') || text.includes('knight') || text.includes('helmet')) {
+    else if (text.includes('astronaut') || text.includes('knight') || text.includes('soldier') || text.includes('firefighter') || text.includes('helmet')) {
       headwear = 'helmet';
     } else if (text.includes('halo') || text.includes('angel')) headwear = 'halo';
     else if (text.includes('beanie')) headwear = 'beanie';
 
-    return {
-      entityType: 'humanoid',
-      archetype: isRobot ? 'robot' : isFem ? 'girl' : 'boy',
-      hairStyle: isFem ? 'ponytail' : text.includes('spiky') || text.includes('hero') ? 'spiky' : 'short',
-      headwear,
-      outfitStyle: text.includes('hero')
-        ? 'superhero'
-        : text.includes('wizard') || text.includes('witch')
-          ? 'robe'
-          : text.includes('astronaut') || text.includes('knight')
-            ? 'armor'
-            : text.includes('hoodie')
-              ? 'hoodie'
-              : isFem
-                ? 'dress'
-                : 'tshirt',
-      primaryColor: firstColor,
-      secondaryColor: '#1E293B',
-      accentColor: '#FACC15',
-      skinColor: isFem ? '#FAD2B8' : '#F4C2A1',
-      eyeColor: isFem ? '#16A34A' : '#0284C7',
-      hairColor: isFem ? '#5A2D18' : '#3B2314',
-      accessories,
-    };
+    return enforceHumanoidRoleDefaults(
+      {
+        entityType: 'humanoid',
+        archetype: isRobot ? 'robot' : isFem ? 'girl' : 'boy',
+        hairStyle: isFem ? 'ponytail' : text.includes('spiky') || text.includes('hero') ? 'spiky' : 'short',
+        headwear,
+        outfitStyle: text.includes('hero')
+          ? 'superhero'
+          : text.includes('wizard') || text.includes('witch') || /\b(king|queen|prince)\b/.test(text)
+            ? 'robe'
+            : text.includes('astronaut') || text.includes('knight') || text.includes('soldier')
+              ? 'armor'
+              : text.includes('hoodie')
+                ? 'hoodie'
+                : isFem
+                  ? 'dress'
+                  : 'tshirt',
+        primaryColor: firstColor,
+        secondaryColor: '#1E293B',
+        accentColor: '#FACC15',
+        skinColor: isFem ? '#FAD2B8' : '#F4C2A1',
+        eyeColor: isFem ? '#16A34A' : '#0284C7',
+        hairColor: isFem ? '#5A2D18' : '#3B2314',
+        accessories,
+      },
+      text
+    );
   }
 
   return {
@@ -3870,18 +4089,37 @@ function buildSculptedCustomHumanoid(
     };
   }
 
+  const arch = (style.archetype || '').toLowerCase();
   const isFemale =
-    style.archetype === 'girl' ||
+    ['girl', 'woman', 'queen', 'princess', 'fairy', 'witch', 'angel', 'mother', 'daughter', 'lady'].includes(
+      arch
+    ) ||
     style.outfitStyle === 'dress' ||
     style.outfitStyle === 'saree' ||
     style.hairStyle === 'ponytail' ||
     style.hairStyle === 'bun' ||
     style.headwear === 'tiara';
 
+  const isRoyalOrAdult = [
+    'king',
+    'queen',
+    'wizard',
+    'witch',
+    'soldier',
+    'knight',
+    'police',
+    'firefighter',
+    'doctor',
+    'chef',
+    'teacher',
+    'farmer',
+    'superhero',
+  ].includes(arch);
+
   const spec: HumanoidSpec = {
-    scaleFactor: 0.98,
+    scaleFactor: isRoyalOrAdult ? 1.08 : 0.98,
     isFemale,
-    hasFreckles: true,
+    hasFreckles: !isRoyalOrAdult,
     skinColor: safeHex(style.skinColor, isFemale ? '#FAD2B8' : '#F4C2A1'),
     primaryColor: safeHex(style.primaryColor, '#3B82F6'),
     secondaryColor: safeHex(style.secondaryColor, '#1E293B'),

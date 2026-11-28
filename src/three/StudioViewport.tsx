@@ -104,6 +104,7 @@ function detectSoftwareGl(): boolean {
 export interface StudioViewportHandle {
   getCameraPose: () => CameraPose;
   animateToCameraPose: (pose: CameraPose) => void;
+  captureThumbnail: () => string | null;
   startVideoCapture: (audioStream?: MediaStream | null) => {
     stop: () => Promise<{ blob: Blob; mimeType: string }>;
     cancel: () => void;
@@ -119,6 +120,7 @@ type UnifiedRigEntry = (
   cachedPathSig: string;
   cachedCurve: THREE.Curve<THREE.Vector3> | null;
   cachedCurveLength: number;
+  gaitClock: number;
 };
 
 interface StudioViewportProps {
@@ -286,6 +288,30 @@ export const StudioViewport = forwardRef<StudioViewportHandle, StudioViewportPro
         _camGoalPos.set(...pose.position);
         _camGoalTarget.set(...pose.target);
         inst.camTransitionActive = true;
+      },
+      captureThumbnail: () => {
+        const inst = threeRef.current;
+        if (!inst) return null;
+        try {
+          inst.renderer.render(inst.scene, inst.camera);
+          const src = inst.renderer.domElement;
+          const tw = 240;
+          const th = 135;
+          const out = document.createElement('canvas');
+          out.width = tw;
+          out.height = th;
+          const ctx = out.getContext('2d');
+          if (!ctx) return null;
+          ctx.fillStyle = '#0B0E14';
+          ctx.fillRect(0, 0, tw, th);
+          const scale = Math.min(tw / Math.max(1, src.width), th / Math.max(1, src.height));
+          const dw = src.width * scale;
+          const dh = src.height * scale;
+          ctx.drawImage(src, (tw - dw) / 2, (th - dh) / 2, dw, dh);
+          return out.toDataURL('image/jpeg', 0.72);
+        } catch {
+          return null;
+        }
       },
       startVideoCapture: (audioStream?: MediaStream | null) => {
         const inst = threeRef.current;
@@ -884,12 +910,19 @@ export const StudioViewport = forwardRef<StudioViewportHandle, StudioViewportPro
               0.3,
               2.0
             );
+            const targetMpSpeed = THREE.MathUtils.clamp(
+              targetActor?.motionPath?.speed ?? 1.0,
+              0.25,
+              3.0
+            );
             const previewDur =
               incomingPreview.kind === 'entrance'
                 ? Math.max(1.5, inDur + 0.35)
                 : incomingPreview.kind === 'exit'
                   ? Math.max(1.5, outDur + 0.25)
-                  : 1.5;
+                  : incomingPreview.kind === 'motionPath'
+                    ? THREE.MathUtils.clamp(1.6 / targetMpSpeed, 0.5, 4.0)
+                    : 1.5;
 
             oneShotPreviewRef.current = {
               actorId: incomingPreview.actorId,
@@ -961,7 +994,6 @@ export const StudioViewport = forwardRef<StudioViewportHandle, StudioViewportPro
 
           // Keep animations continuously alive at 60fps whenever paused; freeze only while actively dragging scrubber
           const isScrubMode = !playing && scrubbing;
-          const animClockTime = isScrubMode ? sceneTime : elapsed;
 
           inst.rigs.forEach((entry) => {
             const { actor } = entry;
@@ -980,8 +1012,9 @@ export const StudioViewport = forwardRef<StudioViewportHandle, StudioViewportPro
             let baseZ = actor.position[1];
             let baseRotY = actor.rotationY;
 
-            // Motion Path interpolation (Straight, Freehand Curve, Multi-Turn)
+            // Motion Path interpolation (Straight, Freehand Curve, Multi-Turn) with Speed Control
             const mp = resolveActorMotionPath(actor);
+            const mpSpeed = mp ? THREE.MathUtils.clamp(mp.speed ?? 1.0, 0.25, 3.0) : 1.0;
             if (mp) {
               const mpSig = JSON.stringify({
                 m: mp.mode,
@@ -1014,29 +1047,49 @@ export const StudioViewport = forwardRef<StudioViewportHandle, StudioViewportPro
                     ? 'Fly'
                     : actor.kind === 'fish'
                       ? 'Swim'
-                      : 'Walk'
-                  : 'Walk';
+                      : mpSpeed >= 1.75
+                        ? 'Run/Chase'
+                        : 'Walk'
+                  : mpSpeed >= 1.75
+                    ? 'Run'
+                    : 'Walk';
 
+            let isCurrentlyTraversing = false;
             if (actorOneShot?.kind === 'motionPath' && mp && entry.cachedCurve) {
-              const rawP = THREE.MathUtils.clamp(oneShotElapsed / 1.5, 0, 1);
+              const oneDur = Math.max(0.4, actorOneShot.durationSec);
+              const rawP = THREE.MathUtils.clamp(oneShotElapsed / oneDur, 0, 1);
               const smoothP = rawP * rawP * (3 - 2 * rawP);
               sampleMotionCurve(entry.cachedCurve, smoothP, _pathPos, _pathTan);
               baseX = _pathPos.x;
               baseZ = _pathPos.z;
               if (entry.cachedCurveLength > 0.05) {
                 baseRotY = Math.atan2(_pathTan.x, _pathTan.z);
-                if (!travelAnims.includes(actor.animation)) {
+                isCurrentlyTraversing = rawP < 0.995;
+                if (isCurrentlyTraversing && !travelAnims.includes(actor.animation)) {
                   activeAnim = resolveTravelAnim();
                 }
               }
             } else if (mp && entry.cachedCurve && previewTimeline) {
-              sampleMotionCurve(entry.cachedCurve, actProg, _pathPos, _pathTan);
+              const pathProg = THREE.MathUtils.clamp(actProg * mpSpeed, 0, 1);
+              sampleMotionCurve(entry.cachedCurve, pathProg, _pathPos, _pathTan);
               baseX = _pathPos.x;
               baseZ = _pathPos.z;
               if (entry.cachedCurveLength > 0.05) {
                 baseRotY = Math.atan2(_pathTan.x, _pathTan.z);
-                if (actInWindow && !travelAnims.includes(actor.animation)) {
+                const arrivedAtEnd = pathProg >= 0.999;
+                isCurrentlyTraversing = actInWindow && !arrivedAtEnd;
+                if (isCurrentlyTraversing && !travelAnims.includes(actor.animation)) {
                   activeAnim = resolveTravelAnim();
+                } else if (arrivedAtEnd && actInWindow) {
+                  if (
+                    activeAnim === 'Walk' ||
+                    activeAnim === 'Run' ||
+                    activeAnim === 'Running & Chasing' ||
+                    activeAnim === 'Run/Chase' ||
+                    activeAnim === 'Drive/Ride Forward'
+                  ) {
+                    activeAnim = actor.actorType === 'vehicle' ? 'Parked' : 'Idle';
+                  }
                 }
               }
             }
@@ -1120,6 +1173,12 @@ export const StudioViewport = forwardRef<StudioViewportHandle, StudioViewportPro
 
             const autoLipSync = playing && hasDialogue && voiceInWindow;
 
+            const isMovingGait = travelAnims.includes(activeAnim);
+            const gaitRate = isMovingGait && mp ? mpSpeed : 1.0;
+            entry.gaitClock += delta * gaitRate;
+            const animClockTime = isScrubMode ? sceneTime * gaitRate : entry.gaitClock;
+            void elapsed;
+
             if (entry.kindTag === 'character') {
               updateCharacterAnimation(
                 entry.rig,
@@ -1129,7 +1188,8 @@ export const StudioViewport = forwardRef<StudioViewportHandle, StudioViewportPro
                 delta,
                 lipAmp,
                 autoLipSync,
-                isScrubMode
+                isScrubMode,
+                gaitRate
               );
             } else if (entry.kindTag === 'animal') {
               updateAnimalAnimation(
@@ -1139,7 +1199,8 @@ export const StudioViewport = forwardRef<StudioViewportHandle, StudioViewportPro
                 animClockTime,
                 delta,
                 lipAmp,
-                autoLipSync
+                autoLipSync,
+                gaitRate
               );
             } else {
               updatePropOrCustomAnimation(
@@ -1148,7 +1209,8 @@ export const StudioViewport = forwardRef<StudioViewportHandle, StudioViewportPro
                 animClockTime,
                 delta,
                 lipAmp,
-                autoLipSync
+                autoLipSync,
+                gaitRate
               );
             }
           });
@@ -1371,6 +1433,7 @@ export const StudioViewport = forwardRef<StudioViewportHandle, StudioViewportPro
               cachedPathSig: '',
               cachedCurve: null,
               cachedCurveLength: 0,
+              gaitClock: 0,
             };
           } else if (actor.actorType === 'animal') {
             const rig = createAnimalRig(actor.kind as AnimalKind, actor.accentColor);
@@ -1384,6 +1447,7 @@ export const StudioViewport = forwardRef<StudioViewportHandle, StudioViewportPro
               cachedPathSig: '',
               cachedCurve: null,
               cachedCurveLength: 0,
+              gaitClock: 0,
             };
           } else if (actor.actorType === 'vehicle') {
             const rig = createVehicleRig(actor.kind as VehicleKind, actor.accentColor);
@@ -1397,6 +1461,7 @@ export const StudioViewport = forwardRef<StudioViewportHandle, StudioViewportPro
               cachedPathSig: '',
               cachedCurve: null,
               cachedCurveLength: 0,
+              gaitClock: 0,
             };
           } else if (actor.actorType === 'custom' && actor.customBlueprint) {
             const rig = createCustomModelRig(actor.customBlueprint);
@@ -1410,6 +1475,7 @@ export const StudioViewport = forwardRef<StudioViewportHandle, StudioViewportPro
               cachedPathSig: '',
               cachedCurve: null,
               cachedCurveLength: 0,
+              gaitClock: 0,
             };
           } else {
             const rig = createPropRig(actor.kind as PropKind, actor.accentColor);
@@ -1423,6 +1489,7 @@ export const StudioViewport = forwardRef<StudioViewportHandle, StudioViewportPro
               cachedPathSig: '',
               cachedCurve: null,
               cachedCurveLength: 0,
+              gaitClock: 0,
             };
           }
           inst.rigs.set(actor.id, entry);

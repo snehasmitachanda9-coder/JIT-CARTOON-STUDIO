@@ -1,16 +1,21 @@
 import React, { useRef, useState } from 'react';
 import {
   Clapperboard,
+  Clock,
   Crown,
+  Download,
+  FolderOpen,
   GraduationCap,
   Image as ImageIcon,
   Monitor,
+  Play,
   Plus,
   Smartphone,
   Sparkles,
   Square as SquareIcon,
   Trash2,
   Trees,
+  Upload,
   X,
 } from 'lucide-react';
 import {
@@ -18,6 +23,7 @@ import {
   CustomBackgroundConfig,
   EnvironmentId,
   ENVIRONMENT_META,
+  SavedProjectRecord,
 } from '../types/studio';
 
 export type ProjectTemplateId =
@@ -40,7 +46,13 @@ interface NewProjectModalProps {
   canDismiss: boolean;
   initialProjectName: string;
   initialAspectRatio: AspectRatioMode;
+  savedProjects: SavedProjectRecord[];
+  autoDraft: SavedProjectRecord | null;
   onCreateProject: (config: NewProjectConfig) => void;
+  onResumeProject: (record: SavedProjectRecord) => void;
+  onDeleteSavedProject: (id: string) => void;
+  onDownloadProjectJson: (record?: SavedProjectRecord) => void;
+  onImportProjectJson: (file: File) => void;
   onClose: () => void;
 }
 
@@ -90,15 +102,35 @@ const BLANK_ENVS: EnvironmentId[] = [
   'forest',
 ];
 
+function formatSavedDate(ts: number): string {
+  try {
+    return new Date(ts).toLocaleString(undefined, {
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  } catch {
+    return 'Saved recently';
+  }
+}
+
 export function NewProjectModal({
   open,
   canDismiss,
   initialProjectName,
   initialAspectRatio,
+  savedProjects,
+  autoDraft,
   onCreateProject,
+  onResumeProject,
+  onDeleteSavedProject,
+  onDownloadProjectJson,
+  onImportProjectJson,
   onClose,
 }: NewProjectModalProps) {
   const bgInputRef = useRef<HTMLInputElement>(null);
+  const projectFileInputRef = useRef<HTMLInputElement>(null);
   const [projectName, setProjectName] = useState(
     initialProjectName || 'My Cartoon Story'
   );
@@ -149,6 +181,15 @@ export function NewProjectModal({
     });
   };
 
+  const showAutoDraftBanner =
+    Boolean(autoDraft) &&
+    autoDraft!.scenes.some((s) => s.actors.length > 0 || s.customBackground) &&
+    !savedProjects.some(
+      (p) =>
+        p.id === autoDraft!.id &&
+        Math.abs(p.updatedAt - autoDraft!.updatedAt) < 15_000
+    );
+
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-[#06080D]/88 p-3 sm:p-5 overflow-y-auto"
@@ -158,10 +199,10 @@ export function NewProjectModal({
     >
       <form
         onSubmit={handleSubmit}
-        className="w-full max-w-2xl rounded-2xl bg-[#121723] border border-white/15 shadow-2xl overflow-hidden my-auto"
+        className="w-full max-w-2xl max-h-[92dvh] rounded-2xl bg-[#121723] border border-white/15 shadow-2xl overflow-hidden flex flex-col my-auto"
       >
         {/* Header */}
-        <div className="px-5 py-4 bg-[#161D2C] border-b border-white/10 flex items-center justify-between gap-3">
+        <div className="px-5 py-3.5 bg-[#161D2C] border-b border-white/10 flex items-center justify-between gap-3 shrink-0">
           <div className="flex items-center gap-3 min-w-0">
             <div className="w-9 h-9 rounded-xl bg-amber-500/15 border border-amber-500/35 flex items-center justify-center shrink-0">
               <Clapperboard className="w-4.5 h-4.5 text-amber-400" />
@@ -171,10 +212,10 @@ export function NewProjectModal({
                 id="new-project-heading"
                 className="font-display text-base sm:text-lg font-semibold text-slate-100 truncate"
               >
-                Create New Cartoon Project
+                JIT 3D Cartoon Studio — Projects
               </h2>
               <p className="text-[11px] text-slate-400">
-                Name your story, pick your frame format, and start from blank or a starter world
+                Resume a saved project, load a backup file, or start a brand-new cartoon
               </p>
             </div>
           </div>
@@ -191,14 +232,167 @@ export function NewProjectModal({
           )}
         </div>
 
-        <div className="p-5 space-y-5">
+        {/* Scrollable Body */}
+        <div className="p-5 space-y-5 overflow-y-auto flex-1">
+          {/* Saved Projects (Resume Work) & JSON Backup/Restore */}
+          <div className="p-3.5 rounded-xl bg-[#0D121C] border border-emerald-500/30 space-y-2.5">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <FolderOpen className="w-4 h-4 text-emerald-400" />
+                <span className="text-xs font-semibold text-emerald-300">
+                  Saved Projects (Resume Work)
+                </span>
+                <span className="px-1.5 py-0.5 rounded bg-emerald-500/15 text-[10px] font-mono-tabular text-emerald-200">
+                  {savedProjects.length}
+                </span>
+              </div>
+
+              <div className="flex items-center gap-1.5">
+                <input
+                  ref={projectFileInputRef}
+                  type="file"
+                  accept=".json,application/json"
+                  className="hidden"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) onImportProjectJson(file);
+                    e.target.value = '';
+                  }}
+                />
+                {canDismiss && (
+                  <button
+                    type="button"
+                    onClick={() => onDownloadProjectJson()}
+                    className="px-2.5 py-1 rounded-lg bg-[#172033] hover:bg-[#202C45] border border-white/12 text-[11px] font-medium text-slate-200 flex items-center gap-1 cursor-pointer"
+                  >
+                    <Download className="w-3 h-3 text-amber-400" />
+                    <span>Download (.json)</span>
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => projectFileInputRef.current?.click()}
+                  className="px-2.5 py-1 rounded-lg bg-[#172033] hover:bg-[#202C45] border border-sky-400/35 text-[11px] font-medium text-sky-200 flex items-center gap-1 cursor-pointer"
+                >
+                  <Upload className="w-3 h-3 text-sky-400" />
+                  <span>Load Project File (.json)</span>
+                </button>
+              </div>
+            </div>
+
+            {showAutoDraftBanner && autoDraft && (
+              <div className="p-2.5 rounded-lg bg-amber-500/10 border border-amber-400/35 flex items-center justify-between gap-2">
+                <div className="min-w-0">
+                  <div className="text-[11px] font-semibold text-amber-200 truncate">
+                    Auto-Saved Draft: {autoDraft.projectName}
+                  </div>
+                  <div className="text-[10px] text-amber-300/80 flex items-center gap-1.5">
+                    <span>{autoDraft.scenes.length} scene(s)</span>
+                    <span>·</span>
+                    <span>{formatSavedDate(autoDraft.updatedAt)}</span>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => onResumeProject(autoDraft)}
+                  className="px-2.5 py-1 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 text-[11px] font-semibold flex items-center gap-1 shrink-0 cursor-pointer"
+                >
+                  <Play className="w-3 h-3 fill-current" />
+                  <span>Open Draft</span>
+                </button>
+              </div>
+            )}
+
+            {savedProjects.length === 0 ? (
+              <p className="text-[11px] text-slate-400 py-1">
+                No saved projects yet — click &ldquo;Save Project&rdquo; in the top bar anytime to store your work here or export a .json backup.
+              </p>
+            ) : (
+              <div className="max-h-44 overflow-y-auto space-y-1.5 pr-0.5">
+                {savedProjects.map((proj) => {
+                  const totalActors = proj.scenes.reduce(
+                    (sum, s) => sum + (s.actors?.length || 0),
+                    0
+                  );
+                  return (
+                    <div
+                      key={proj.id}
+                      className="p-2 rounded-lg bg-[#141B29] border border-white/10 hover:border-emerald-400/40 flex items-center justify-between gap-2.5 transition-colors"
+                    >
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        {proj.thumbnailDataUrl ? (
+                          <img
+                            src={proj.thumbnailDataUrl}
+                            alt={proj.projectName}
+                            className="w-14 h-8 rounded object-cover border border-white/10 shrink-0 bg-[#0B0E14]"
+                          />
+                        ) : (
+                          <div className="w-14 h-8 rounded bg-[#1B2436] border border-white/10 flex items-center justify-center shrink-0">
+                            <Clapperboard className="w-3.5 h-3.5 text-slate-400" />
+                          </div>
+                        )}
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-xs font-semibold text-slate-100 truncate">
+                              {proj.projectName}
+                            </span>
+                            <span className="px-1.5 py-0.2 rounded bg-white/8 text-[9px] text-slate-300 shrink-0">
+                              {proj.aspectRatio}
+                            </span>
+                          </div>
+                          <div className="text-[10px] text-slate-400 flex items-center gap-1.5">
+                            <span>
+                              {proj.scenes.length} scene{proj.scenes.length === 1 ? '' : 's'} · {totalActors} model{totalActors === 1 ? '' : 's'}
+                            </span>
+                            <span>·</span>
+                            <span className="inline-flex items-center gap-0.5">
+                              <Clock className="w-2.5 h-2.5" />
+                              {formatSavedDate(proj.updatedAt)}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-1 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => onResumeProject(proj)}
+                          className="px-2.5 py-1 rounded-md bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-[11px] font-semibold flex items-center gap-1 cursor-pointer"
+                        >
+                          <Play className="w-3 h-3 fill-current" />
+                          <span>Open &amp; Continue</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => onDownloadProjectJson(proj)}
+                          title="Download Project (.json)"
+                          className="p-1.5 rounded-md bg-[#1C2538] hover:bg-[#25314B] text-slate-300 cursor-pointer"
+                        >
+                          <Download className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => onDeleteSavedProject(proj.id)}
+                          title="Delete saved project"
+                          className="p-1.5 rounded-md bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 cursor-pointer"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
           {/* 1. Project Name */}
           <div className="space-y-1.5">
             <label
               htmlFor="project-name-input"
               className="block text-xs font-medium text-slate-300"
             >
-              Project Name
+              Create New Project — Project Name
             </label>
             <input
               id="project-name-input"
@@ -207,7 +401,6 @@ export function NewProjectModal({
               onChange={(e) => setProjectName(e.target.value)}
               placeholder="My Cartoon Story"
               maxLength={48}
-              autoFocus
               className="w-full h-10 px-3.5 rounded-xl bg-[#0B0E14] border border-white/15 text-sm text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-amber-400"
             />
           </div>
@@ -294,7 +487,7 @@ export function NewProjectModal({
                 <div className="min-w-0">
                   <div className="text-xs font-semibold">Blank Empty Stage</div>
                   <p className="text-[11px] text-slate-400">
-                    Clean 3D ground ready for adding your own characters, animals & props
+                    Clean 3D ground ready for adding your own characters, animals &amp; props
                   </p>
                 </div>
               </div>
@@ -429,7 +622,7 @@ export function NewProjectModal({
         </div>
 
         {/* Footer */}
-        <div className="px-5 py-3.5 bg-[#0E131D] border-t border-white/10 flex items-center justify-end gap-2.5">
+        <div className="px-5 py-3.5 bg-[#0E131D] border-t border-white/10 flex items-center justify-end gap-2.5 shrink-0">
           {canDismiss && (
             <button
               type="button"

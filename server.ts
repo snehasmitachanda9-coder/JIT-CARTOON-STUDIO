@@ -9,6 +9,88 @@ import { GoogleGenAI, Type } from '@google/genai';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+function normalizeAiModelBlueprint(
+  parsed: Record<string, unknown>,
+  promptText: string
+): Record<string, unknown> {
+  const lower = promptText.toLowerCase();
+  const rawStyle =
+    parsed.style && typeof parsed.style === 'object'
+      ? ({ ...(parsed.style as Record<string, unknown>) } as Record<string, unknown>)
+      : ({} as Record<string, unknown>);
+
+  const hasVehicleWord =
+    /\b(car|bus|truck|cart|train|taxi|van|tractor|helicopter|chopper|plane|airplane|jet|boat|ship|rocket|spaceship|motorcycle|bicycle)\b/.test(
+      lower
+    );
+  const hasHumanoidWord =
+    /\b(boy|girl|kid|man|woman|hero|superhero|wizard|witch|king|queen|prince|princess|knight|soldier|warrior|astronaut|pirate|ninja|robot|chef|doctor|nurse|police|policeman|policewoman|cop|firefighter|farmer|teacher|angel|fairy|samurai|explorer)\b/.test(
+      lower
+    ) && !hasVehicleWord;
+
+  if (hasHumanoidWord) {
+    parsed.category = 'character';
+    rawStyle.entityType = 'humanoid';
+    const acc = new Set<string>(
+      Array.isArray(rawStyle.accessories)
+        ? rawStyle.accessories.map((v) => String(v))
+        : []
+    );
+
+    if (/\bking\b/.test(lower) && !/\bqueen\b/.test(lower)) {
+      rawStyle.archetype = 'king';
+      rawStyle.headwear = 'crown';
+      rawStyle.outfitStyle = 'robe';
+      acc.add('cape');
+      if (!/\b(boy|young|clean)\b/.test(lower)) acc.add('beard');
+    } else if (/\bqueen\b/.test(lower)) {
+      rawStyle.archetype = 'queen';
+      rawStyle.headwear = 'crown';
+      rawStyle.outfitStyle = 'robe';
+      if (!rawStyle.hairStyle || rawStyle.hairStyle === 'short') rawStyle.hairStyle = 'long';
+      acc.add('cape');
+    } else if (/\bprincess\b/.test(lower)) {
+      rawStyle.archetype = 'princess';
+      rawStyle.headwear = 'tiara';
+      rawStyle.outfitStyle = 'dress';
+      acc.add('cape');
+    } else if (/\bprince\b/.test(lower)) {
+      rawStyle.archetype = 'prince';
+      rawStyle.headwear = 'crown';
+      rawStyle.outfitStyle = 'robe';
+      acc.add('cape');
+    } else if (/\b(soldier|knight|warrior|guard)\b/.test(lower)) {
+      rawStyle.archetype = /\bknight\b/.test(lower) ? 'knight' : 'soldier';
+      rawStyle.headwear = 'helmet';
+      rawStyle.outfitStyle = 'armor';
+      acc.add('gloves');
+      if (/\bknight\b/.test(lower)) acc.add('cape');
+    } else if (/\b(police|policeman|policewoman|cop)\b/.test(lower)) {
+      rawStyle.archetype = 'police';
+      rawStyle.headwear = 'policeCap';
+      rawStyle.outfitStyle = 'uniform';
+      acc.add('gloves');
+    } else if (/\bwizard\b/.test(lower)) {
+      rawStyle.archetype = 'wizard';
+      rawStyle.headwear = 'wizardHat';
+      rawStyle.outfitStyle = 'robe';
+      acc.add('beard');
+      acc.add('cape');
+    } else if (/\b(superhero|super\s*hero)\b/.test(lower)) {
+      rawStyle.archetype = 'superhero';
+      rawStyle.outfitStyle = 'superhero';
+      acc.add('cape');
+      acc.add('mask');
+      acc.add('gloves');
+    }
+
+    rawStyle.accessories = Array.from(acc);
+    parsed.style = rawStyle;
+  }
+
+  return parsed;
+}
+
 function getGeminiClient(): GoogleGenAI | null {
   const key = (process.env.GEMINI_API_KEY || '').trim();
   if (!key || key === 'MY_GEMINI_API_KEY') {
@@ -77,9 +159,17 @@ async function startServer() {
       const response = await generateWithFallback(ai, {
         contents: `Design a vibrant, high-detail Chibi-Pixar 3D cartoon model for: "${promptText}".
 Return BOTH:
-1) "style" metadata so our sculpted 3D character/vehicle/creature engine can render expressive glossy 3D eyes, volumetric hair, sculpted outfits/capes/hats/wings, curved vehicle silhouettes, or sculpted animal features:
-   - entityType: "humanoid" (any person, hero, boy, girl, robot, wizard, king, astronaut, ninja, etc.), "animal" (dog, cat, dragon, dino, lion, bird, monster, creature, unicorn, etc.), "vehicle" (car, bus, truck, bike, boat, helicopter, airplane, spaceship, cart, train), or "prop" (buildings, trees, items, castles, swords, chests, etc.).
-   - archetype: concise archetype word (e.g., "boy", "girl", "superhero", "wizard", "robot", "dragon", "dino", "lion", "car", "schoolBus", "policeCar", "helicopter", "airplane", "boat", "castle", "sword", etc.).
+1) "style" metadata so our sculpted Chibi-Pixar 3D engine renders clean symmetrical faces (glossy eyes, nose, smiling lips) and iconic outfits/headwear:
+   - entityType: "humanoid" (any person, king, queen, prince, princess, superhero, soldier, knight, police officer, wizard, witch, boy, girl, robot, astronaut, chef, doctor), "animal" (dog, cat, dragon, dino, lion, bird, monster, creature, unicorn), "vehicle" (car, police car, bus, truck, bike, boat, helicopter, airplane, spaceship, cart, train), or "prop" (standalone buildings, trees, furniture, castles, chests, swords).
+   - archetype: concise role keyword ("king", "queen", "prince", "princess", "soldier", "knight", "police", "superhero", "wizard", "witch", "robot", "boy", "girl", "dragon", "dino", "lion", "car", "schoolBus", "policeCar", "helicopter", "airplane", "boat", "castle", etc.).
+   - Role rules:
+     * king / prince -> headwear "crown", outfitStyle "robe", accessories include "cape" (and "beard" for king)
+     * queen -> headwear "crown", outfitStyle "robe", hairStyle "long", accessories include "cape"
+     * princess -> headwear "tiara", outfitStyle "dress", hairStyle "long", accessories include "cape"
+     * soldier / knight -> headwear "helmet", outfitStyle "armor", accessories include "gloves"
+     * police officer -> entityType "humanoid", headwear "policeCap", outfitStyle "uniform"
+     * wizard / witch -> headwear "wizardHat" or "witchHat", outfitStyle "robe", accessories include "cape"
+     * superhero -> outfitStyle "superhero", accessories include "cape", "mask", "gloves"
    - hairStyle: one of "short", "spiky", "ponytail", "bob", "curly", "long", "bun" (for humanoids).
    - headwear: one of "none", "cap", "beanie", "crown", "tiara", "witchHat", "wizardHat", "helmet", "policeCap", "chefHat", "strawHat", "halo", "wreath".
    - outfitStyle: one of "tshirt", "hoodie", "jacket", "dress", "robe", "uniform", "overalls", "labcoat", "superhero", "armor", "saree".
@@ -185,7 +275,10 @@ Return BOTH:
       });
 
       const raw = (response.text || '{}').trim();
-      const parsed = JSON.parse(raw);
+      const parsed = normalizeAiModelBlueprint(
+        JSON.parse(raw) as Record<string, unknown>,
+        promptText
+      );
       res.json({ blueprint: parsed });
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Failed to generate 3D model';

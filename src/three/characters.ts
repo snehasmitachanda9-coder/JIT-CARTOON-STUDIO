@@ -244,11 +244,13 @@ export function updateCharacterAnimation(
   delta: number,
   lipSyncLevel: number,
   autoLipSyncActive: boolean,
-  scrubMode = false
+  scrubMode = false,
+  speedMultiplier = 1.0
 ): void {
   const p = rig.parts;
   const t = elapsed + rig.jumpPhaseOffset * 0.25;
   const k = scrubMode ? 1 : Math.min(1, Math.max(delta, 0.001) * 12);
+  const paceAmp = THREE.MathUtils.clamp(0.75 + speedMultiplier * 0.25, 0.72, 1.35);
 
   // Default relaxed standing pose: natural downward arms (±0.18 rad), subtle elbow bend
   let bodyY = p.baseBodyY;
@@ -292,14 +294,14 @@ export function updateCharacterAnimation(
     case 'Walk': {
       const spd = 5.4;
       const sw = Math.sin(t * spd);
-      bodyY = p.baseBodyY + Math.abs(Math.cos(t * spd)) * 0.045;
-      bodyRotX = 0.05;
-      lLegX = sw * 0.52;
-      rLegX = -sw * 0.52;
-      lKneeX = Math.max(0, -sw) * 0.45;
-      rKneeX = Math.max(0, sw) * 0.45;
-      lArmX = -sw * 0.42;
-      rArmX = sw * 0.42;
+      bodyY = p.baseBodyY + Math.abs(Math.cos(t * spd)) * 0.045 * paceAmp;
+      bodyRotX = 0.05 * paceAmp;
+      lLegX = sw * 0.52 * paceAmp;
+      rLegX = -sw * 0.52 * paceAmp;
+      lKneeX = Math.max(0, -sw) * 0.45 * paceAmp;
+      rKneeX = Math.max(0, sw) * 0.45 * paceAmp;
+      lArmX = -sw * 0.42 * paceAmp;
+      rArmX = sw * 0.42 * paceAmp;
       lForeX = -0.28 - Math.max(0, sw) * 0.2;
       rForeX = -0.28 - Math.max(0, -sw) * 0.2;
       headRotY = sw * 0.04;
@@ -310,14 +312,14 @@ export function updateCharacterAnimation(
     case 'Running & Chasing': {
       const spd = 9.5;
       const sw = Math.sin(t * spd);
-      bodyY = p.baseBodyY + Math.abs(Math.cos(t * spd)) * 0.085;
-      bodyRotX = 0.18;
-      lLegX = sw * 0.8;
-      rLegX = -sw * 0.8;
+      bodyY = p.baseBodyY + Math.abs(Math.cos(t * spd)) * 0.085 * paceAmp;
+      bodyRotX = Math.min(0.28, 0.18 * paceAmp);
+      lLegX = sw * 0.8 * Math.min(1.2, paceAmp);
+      rLegX = -sw * 0.8 * Math.min(1.2, paceAmp);
       lKneeX = Math.max(0, -sw) * 0.85 + 0.15;
       rKneeX = Math.max(0, sw) * 0.85 + 0.15;
-      lArmX = -sw * 0.72;
-      rArmX = sw * 0.72;
+      lArmX = -sw * 0.72 * Math.min(1.2, paceAmp);
+      rArmX = sw * 0.72 * Math.min(1.2, paceAmp);
       lForeX = -1.05;
       rForeX = -1.05;
       break;

@@ -552,7 +552,10 @@ export function InspectorPanel({
         );
 
         const resolvedMp: MotionPathConfig = selectedActor.motionPath
-          ? selectedActor.motionPath
+          ? {
+              ...selectedActor.motionPath,
+              speed: selectedActor.motionPath.speed ?? 1.0,
+            }
           : selectedActor.walkPath?.enabled
             ? {
                 enabled: true,
@@ -562,6 +565,7 @@ export function InspectorPanel({
                   [...selectedActor.walkPath.end],
                 ],
                 cornerStyle: 'sharp',
+                speed: 1.0,
               }
             : {
                 enabled: false,
@@ -571,7 +575,27 @@ export function InspectorPanel({
                   [defaultEndX, selectedActor.position[1]],
                 ],
                 cornerStyle: 'rounded',
+                speed: 1.0,
               };
+
+        const mpSpeed = resolvedMp.speed ?? 1.0;
+
+        const updateMotionSpeed = (nextSpeed: number, previewNow: boolean) => {
+          const clamped = Number(
+            Math.max(0.25, Math.min(3.0, nextSpeed)).toFixed(2)
+          );
+          onUpdateActor(selectedActor.id, {
+            motionPath: {
+              ...resolvedMp,
+              enabled: true,
+              speed: clamped,
+            },
+            walkPath: undefined,
+          });
+          if (previewNow && resolvedMp.points.length >= 2) {
+            onTriggerEffectPreview(selectedActor.id, 'motionPath');
+          }
+        };
 
         const switchMotionMode = (nextMode: MotionPathMode) => {
           const basePts: Array<[number, number]> =
@@ -595,6 +619,7 @@ export function InspectorPanel({
                   : nextMode === 'freehand'
                     ? 'rounded'
                     : 'sharp',
+              speed: mpSpeed,
             },
             walkPath: undefined,
           });
@@ -615,7 +640,7 @@ export function InspectorPanel({
           const rev = [...resolvedMp.points].reverse();
           onUpdateActor(selectedActor.id, {
             position: [...rev[0]],
-            motionPath: { ...resolvedMp, enabled: true, points: rev },
+            motionPath: { ...resolvedMp, enabled: true, points: rev, speed: mpSpeed },
             walkPath: undefined,
           });
           onTriggerEffectPreview(selectedActor.id, 'motionPath');
@@ -864,6 +889,64 @@ export function InspectorPanel({
                     1 → 2 → 3
                   </span>
                 </button>
+              </div>
+
+              {/* Movement Speed Slider & Quick Pace Presets */}
+              <div className="p-2 rounded-lg bg-[#0E131F] border border-white/8 space-y-1.5">
+                <div className="flex items-center justify-between text-[11px]">
+                  <label
+                    htmlFor="motion-speed-slider"
+                    className="font-medium text-slate-200"
+                  >
+                    Movement Speed
+                  </label>
+                  <span className="font-mono-tabular font-semibold text-sky-300">
+                    {mpSpeed.toFixed(2)}x
+                  </span>
+                </div>
+                <input
+                  id="motion-speed-slider"
+                  type="range"
+                  min={0.25}
+                  max={3.0}
+                  step={0.05}
+                  value={mpSpeed}
+                  onChange={(e) =>
+                    updateMotionSpeed(Number(e.target.value), false)
+                  }
+                  onPointerUp={() => {
+                    if (resolvedMp.points.length >= 2) {
+                      onTriggerEffectPreview(selectedActor.id, 'motionPath');
+                    }
+                  }}
+                  className="w-full accent-sky-400 cursor-pointer"
+                />
+                <div className="grid grid-cols-4 gap-1">
+                  {(
+                    [
+                      ['Slow', 0.5],
+                      ['Normal', 1.0],
+                      ['Fast', 1.8],
+                      ['Sprint', 2.5],
+                    ] as const
+                  ).map(([lbl, spd]) => {
+                    const active = Math.abs(mpSpeed - spd) < 0.08;
+                    return (
+                      <button
+                        key={lbl}
+                        type="button"
+                        onClick={() => updateMotionSpeed(spd, true)}
+                        className={`py-1 px-1 rounded text-[10px] font-medium border cursor-pointer transition-colors ${
+                          active
+                            ? 'bg-sky-500/25 border-sky-400 text-sky-100 font-semibold'
+                            : 'bg-[#171E2E] border-white/8 text-slate-300 hover:bg-[#212B42]'
+                        }`}
+                      >
+                        {lbl} ({spd}x)
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
 
               {resolvedMp.enabled && (

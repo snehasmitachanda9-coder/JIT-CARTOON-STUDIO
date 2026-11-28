@@ -38,7 +38,7 @@ export function generateOfflineProceduralModel(prompt: string): CustomModelBluep
 
   // 1. Vehicles (Car / Bus / Truck / Cart / Helicopter / Airplane / Boat / Bike / Tractor)
   if (
-    /\b(bus|car|police|truck|cart|train|taxi|van|tractor|helicopter|chopper|plane|airplane|jet|boat|ship|bike|bicycle|motorcycle|scooter|vehicle)\b/.test(
+    /\b(bus|car|truck|cart|train|taxi|van|tractor|helicopter|chopper|plane|airplane|jet|boat|ship|bike|bicycle|motorcycle|scooter|vehicle)\b/.test(
       lower
     )
   ) {
@@ -361,7 +361,7 @@ export function generateOfflineProceduralModel(prompt: string): CustomModelBluep
     /\b(castle|tower|rocket|spaceship|sword|axe|shield|chest|treasure|crown|tree|flower|house|hut|chair|table|book|lamp|trophy|guitar|ball)\b/.test(
       lower
     ) &&
-    !/\b(boy|girl|kid|man|woman|hero|wizard|witch|king|queen|princess|prince|knight|astronaut|pirate|robot|angel|fairy)\b/.test(
+    !/\b(boy|girl|kid|man|woman|hero|superhero|wizard|witch|king|queen|princess|prince|knight|soldier|warrior|police|policeman|policewoman|cop|firefighter|chef|doctor|nurse|farmer|teacher|astronaut|pirate|ninja|robot|angel|fairy|explorer)\b/.test(
       lower
     )
   ) {
@@ -616,49 +616,91 @@ export function generateOfflineProceduralModel(prompt: string): CustomModelBluep
     };
   }
 
-  // 4. Default High-Detail Humanoid Character (Superhero / Wizard / Girl / Boy / Robot / Knight / Astronaut)
+  // 4. Default High-Detail Humanoid Character (King / Queen / Princess / Soldier / Police / Wizard / Superhero / Girl / Boy / Robot)
   const isRobot = /\b(robot|bot|mech|cyborg|android)\b/.test(lower);
-  const isFem = /\b(girl|woman|queen|princess|fairy|witch|lady|she|daughter|mother)\b/.test(lower);
+  const isKing = /\bking\b/.test(lower) && !/\bqueen\b/.test(lower);
+  const isQueen = /\bqueen\b/.test(lower);
+  const isPrince = /\bprince\b/.test(lower);
+  const isPrincess = /\bprincess\b/.test(lower);
+  const isSoldier = /\b(soldier|knight|warrior|guard)\b/.test(lower);
+  const isPolice = /\b(police|policeman|policewoman|cop)\b/.test(lower);
+  const isFirefighter = /\b(firefighter|fireman)\b/.test(lower);
+  const isFem = /\b(girl|woman|queen|princess|fairy|witch|lady|she|daughter|mother|nurse)\b/.test(lower);
+
   const hasCape =
     lower.includes('cape') ||
     lower.includes('hero') ||
     lower.includes('super') ||
-    lower.includes('king') ||
-    lower.includes('queen') ||
-    lower.includes('wizard');
-  const capeColor = lower.includes('red') ? '#EF4444' : '#DC2626';
+    isKing ||
+    isQueen ||
+    isPrince ||
+    isPrincess ||
+    lower.includes('wizard') ||
+    lower.includes('witch') ||
+    lower.includes('knight');
+
+  const rolePrimaryColor =
+    mainColor !== '#3B82F6'
+      ? mainColor
+      : isKing
+        ? '#DC2626'
+        : isQueen
+          ? '#9333EA'
+          : isPrincess
+            ? '#EC4899'
+            : isPrince
+              ? '#2563EB'
+              : isPolice
+                ? '#1D4ED8'
+                : isFirefighter
+                  ? '#EF4444'
+                  : isSoldier
+                    ? lower.includes('knight')
+                      ? '#64748B'
+                      : '#15803D'
+                    : lower.includes('wizard')
+                      ? '#4F46E5'
+                      : lower.includes('witch')
+                        ? '#7C3AED'
+                        : '#3B82F6';
+
+  const capeColor = lower.includes('red')
+    ? '#EF4444'
+    : isQueen
+      ? '#7E22CE'
+      : '#991B1B';
 
   let hairStyle: HairStyleKind = isFem ? 'ponytail' : 'short';
   if (lower.includes('spiky') || lower.includes('hero') || lower.includes('ninja')) hairStyle = 'spiky';
   else if (lower.includes('curly')) hairStyle = 'curly';
   else if (lower.includes('bun')) hairStyle = 'bun';
-  else if (lower.includes('long') || lower.includes('princess') || lower.includes('queen') || lower.includes('fairy')) {
+  else if (lower.includes('long') || isPrincess || isQueen || lower.includes('fairy') || lower.includes('witch')) {
     hairStyle = 'long';
   }
 
   let headwear: HeadwearKind = 'none';
-  if (lower.includes('cap')) headwear = 'cap';
-  else if (lower.includes('beanie')) headwear = 'beanie';
-  else if (lower.includes('crown')) headwear = isFem ? 'tiara' : 'crown';
-  else if (lower.includes('tiara') || lower.includes('princess')) headwear = 'tiara';
+  if (isPrincess || lower.includes('tiara')) headwear = 'tiara';
+  else if (isKing || isQueen || isPrince || lower.includes('crown')) headwear = 'crown';
   else if (lower.includes('wizard')) headwear = 'wizardHat';
   else if (lower.includes('witch')) headwear = 'witchHat';
-  else if (lower.includes('astronaut') || lower.includes('knight') || lower.includes('helmet')) headwear = 'helmet';
-  else if (lower.includes('police')) headwear = 'policeCap';
+  else if (isPolice) headwear = 'policeCap';
   else if (lower.includes('chef')) headwear = 'chefHat';
+  else if (lower.includes('astronaut') || isSoldier || isFirefighter || lower.includes('helmet')) headwear = 'helmet';
   else if (lower.includes('angel') || lower.includes('halo')) headwear = 'halo';
-  else if (lower.includes('explorer') || lower.includes('boy')) headwear = 'cap';
+  else if (lower.includes('fairy')) headwear = 'wreath';
+  else if (lower.includes('beanie')) headwear = 'beanie';
+  else if (lower.includes('cap') || lower.includes('explorer') || /\bboy\b/.test(lower)) headwear = 'cap';
 
   let outfitStyle: OutfitStyleKind = isFem ? 'dress' : 'tshirt';
   if (lower.includes('hero') || lower.includes('super')) outfitStyle = 'superhero';
-  else if (lower.includes('wizard') || lower.includes('witch') || lower.includes('king') || lower.includes('queen')) {
+  else if (lower.includes('wizard') || lower.includes('witch') || isKing || isQueen || isPrince) {
     outfitStyle = 'robe';
-  } else if (lower.includes('astronaut') || lower.includes('knight')) outfitStyle = 'armor';
+  } else if (lower.includes('astronaut') || isSoldier) outfitStyle = 'armor';
+  else if (isPolice || isFirefighter || lower.includes('chef')) outfitStyle = 'uniform';
+  else if (lower.includes('doctor') || lower.includes('nurse')) outfitStyle = 'labcoat';
+  else if (lower.includes('farmer')) outfitStyle = 'overalls';
   else if (lower.includes('hoodie')) outfitStyle = 'hoodie';
   else if (lower.includes('jacket')) outfitStyle = 'jacket';
-  else if (lower.includes('doctor')) outfitStyle = 'labcoat';
-  else if (lower.includes('police') || lower.includes('chef')) outfitStyle = 'uniform';
-  else if (lower.includes('farmer')) outfitStyle = 'overalls';
 
   const accessories: string[] = [];
   if (hasCape) accessories.push('cape');
@@ -669,19 +711,50 @@ export function generateOfflineProceduralModel(prompt: string): CustomModelBluep
   else if (lower.includes('angel') || lower.includes('wing')) accessories.push('angelWings');
   if (lower.includes('glass')) accessories.push('glasses');
   if (lower.includes('mask') || lower.includes('hero') || lower.includes('ninja')) accessories.push('mask');
-  if (lower.includes('beard') || lower.includes('wizard') || lower.includes('king')) accessories.push('beard');
-  if (lower.includes('glove') || lower.includes('hero') || lower.includes('boy') || lower.includes('astronaut')) {
+  if (lower.includes('beard') || lower.includes('wizard') || (isKing && !lower.includes('young'))) {
+    accessories.push('beard');
+  }
+  if (lower.includes('glove') || lower.includes('hero') || isSoldier || isPolice || isFirefighter || /\bboy\b/.test(lower) || lower.includes('astronaut')) {
     accessories.push('gloves');
   }
+  if (lower.includes('doctor') || lower.includes('nurse')) {
+    accessories.push('stethoscope');
+  }
+
+  const archetype = isRobot
+    ? 'robot'
+    : isKing
+      ? 'king'
+      : isQueen
+        ? 'queen'
+        : isPrincess
+          ? 'princess'
+          : isPrince
+            ? 'prince'
+            : isPolice
+              ? 'police'
+              : isSoldier
+                ? 'soldier'
+                : isFirefighter
+                  ? 'firefighter'
+                  : lower.includes('wizard')
+                    ? 'wizard'
+                    : lower.includes('witch')
+                      ? 'witch'
+                      : lower.includes('hero')
+                        ? 'superhero'
+                        : isFem
+                          ? 'girl'
+                          : 'boy';
 
   const style: CustomModelStyleSpec = {
     entityType: 'humanoid',
-    archetype: isRobot ? 'robot' : isFem ? 'girl' : 'boy',
+    archetype,
     hairStyle,
     headwear,
     outfitStyle,
-    primaryColor: mainColor,
-    secondaryColor: lower.includes('astronaut') ? '#CBD5E1' : '#1E293B',
+    primaryColor: rolePrimaryColor,
+    secondaryColor: lower.includes('astronaut') ? '#CBD5E1' : isPolice ? '#0F172A' : '#1E293B',
     accentColor: hasCape ? capeColor : '#FACC15',
     skinColor: isFem ? '#FAD2B8' : '#F4C2A1',
     eyeColor: isFem ? '#16A34A' : '#0284C7',
